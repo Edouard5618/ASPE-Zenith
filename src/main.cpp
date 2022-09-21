@@ -92,8 +92,8 @@ void setup()
 void loop()
 {
   nexLoop(nex_listen_list); // Écoute les items Nextion
-  //Serial.print("activ_poignees: ");
-  //Serial.println(activ_poignees);
+  Serial.print("updn: ");
+  Serial.println(analogRead(updn));
   switch (npage)
   {       // Algo selon le numéro de page de l'écran
   case 1: // Interface normale
@@ -760,6 +760,15 @@ void process_data (String data)
 
   pwmD_Value = -(float)(signal_x + signal_y);
   pwmG_Value = (float)(-signal_x + signal_y);
+  if (pwmD_Value > 255)
+    pwmD_Value = 255;
+  else if (pwmD_Value < -255)
+    pwmD_Value = -255;
+  if (pwmG_Value > 255)
+    pwmG_Value = 255;
+  else if (pwmG_Value < -255)
+    pwmG_Value = -255;
+
   pwmD_Value = pwmD_Value / 512 * speedcoef * jogCoef; // Scale 255 selon limite jogCoef, pour PWM
   pwmG_Value = pwmG_Value / 512 * speedcoef * jogCoef;
   PWMD = int(pwmD_Value);
