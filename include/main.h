@@ -17,6 +17,8 @@
 #include <Arduino.h> // Librairie pour l'utilisation de la carte Arduino
 #include <Wire.h> //Libairie pour l'utilisation de I2C
 #include <Servo.h> //Libraire pour l'utilisation du servomoteur pour la calibration du IMU (BNO055)
+#include <string.h>
+
 /*---------------------------------------------------------- Variables et objets ----------------------------------------------------------*/
 /*--- ENCODEURS DE POSITION DES VÉRINS ---*/
 #define EncoderCS1 42 
@@ -77,22 +79,23 @@ float pwmG_Value = 0;   // Valeur PWM moteur côté batterie déduite de JoxX et
 float pwmD_Value = 0;   // Valeur PWM moteur côté contrôleur déduite de JoxX et JogY
 int PWMG = 0;           // PWM visé pour moteur côté batterie
 int PWMD = 0;           // PWM visé pour moteur côté contrôleur
-int brightnessG = 0;    // PWM réellement envoyé au moteur côté batterie
-int brightnessD = 0;    // PWM réellement envoyé au moteur côté contrôleur
-int windG = 0;          // Coefficient de variation du PWM pour limiter le jerk du côté batterie
-int windD = 0;          // Coefficient de variation du PWM pour limiter le jerk du côté contrôleur
-long jerkTimer = millis();
-long jerkTime = 20;    // Délai entre chaque variation du PWM pour limiter le jerk
+int PWMG_reel = 0;    // PWM réellement envoyé au moteur côté batterie
+int PWMD_reel = 0;    // PWM réellement envoyé au moteur côté contrôleur
+int diff_PWMG = 0;          // Coefficient de variation du PWM pour limiter le jerk du côté batterie
+int diff_PWMD = 0;          // Coefficient de variation du PWM pour limiter le jerk du côté contrôleur
+unsigned long jerkTimer = millis();
+unsigned long jerkTime = 20;    // Délai entre chaque variation du PWM pour limiter le jerk
 bool wheelstopped = 1; // Appareil immobilisé ?
+#define ACCELMAX 3
 
 /*--- LEVAGE ---*/
 int liftCoef = 255;   // Vitesse de levage maximale, sur 255
 int PWMVG = 0;        // PWM Vérin côté batterie
 int PWMVD = 0;        // PWM Vérin côté contrôleur
-int brightnessVG = 0; // PWM réellement envoyé au Vérin côté batterie
-int brightnessVD = 0; // PWM réellement envoyé au Vérin côté contrôleur
-int windVG = 0;       // Coefficient de variation du PWM pour limiter le jerk du côté batterie
-int windVD = 0;       // Coefficient de variation du PWM pour limiter le jerk du côté contrôleur
+int PWM_VG_reel = 0; // PWM réellement envoyé au Vérin côté batterie
+int PWM_VD_reel = 0; // PWM réellement envoyé au Vérin côté contrôleur
+int diff_PWM_VG = 0;       // Coefficient de variation du PWM pour limiter le jerk du côté batterie
+int diff_PWM_VD = 0;       // Coefficient de variation du PWM pour limiter le jerk du côté contrôleur
 bool btnreleased = 0; // Bouton commande manuelle du levage relâchée ?
 int lmtTrigg = 0;     // Nombre de détection de fin de course consécutives des vérins
 int referenceBouton = 0;
@@ -158,22 +161,19 @@ float battAverage = 0;          // Moyenne de l'array - charge affichée de la b
 int battErr = 0;                // Compte de fois où la valeur de la charge diffère de plus de 1
 int battLevelNintyfivePc = 815; // Équivalent de 95% de charge dans l'algorithme
 int battLevelTwentyPc = 785;    // Équivalent de 20% de charge dans l'algorithme
-long battTimer = millis();
-long battDelay = 0;             // Délai entre mesure de la charge, 0 pour remplir vite le array, devient 1000 après
+unsigned long battTimer = millis();
+unsigned long battDelay = 0;             // Délai entre mesure de la charge, 0 pour remplir vite le array, devient 1000 après
 
 /*--- Manette ---*/
 const unsigned int MAX_INPUT = 10;
 char chaine[MAX_INPUT];
-long commande; // Code de commande reçu de la manette
-    /*
-      Valeurs de commande : 100 000 000 > Valeur < 200 000 000 = control joystick
-      200 000 000 = bouton up (verin)
-      300 000 000 = bouton down (verin)
-      500 000 000 = manette patient
-    */
+int signal_verin;
+int signal_x;
+int signal_y;
 bool watchdog = 0; // Watchdog pour signal manette actif ?
-long watchdogTimer = millis();
-long watchdogDelay = 800; // Watchdog déclare la manette déconnectée après ce délai sans communication
+unsigned long watchdogTimer = millis();
+unsigned long watchdogDelay = 800; // Watchdog déclare la manette déconnectée après ce délai sans communication
+bool manette_en_cours = 0;         // La manette est en train de communiquer avec le contrôleur
 
 /*--- Signal BLE manette ---*/
 char Data[100];   // Char buffer pour enregistrer la communication en AT commande
@@ -299,7 +299,7 @@ const byte ledVerte = 30; // LED qui indique que les poignées sont en mode soli
 /*-------------------------------------------------------- Prototypes de Fonctions --------------------------------------------------------*/
 /*--- DÉPLACEMENT ---*/
 void riseBreaks();     // Désactiver les freins des roues motrices
-void releaseBreaks();  // Actionner les freins des roues motrices
+void Break();  // Actionner les freins des roues motrices
 void asserMoteurs();
 void motorDriveCalc(); // Définit les PWMs finaux envoyés aux roues motrices selon les commandes de la manette ou des poignées
 void machine_stop();   // Arrête le Zenith dans le cas où aucune commande est envoyée pendant la durée du watchdog timer
