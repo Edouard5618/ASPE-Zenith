@@ -12,17 +12,22 @@
 #include <HX711.h>   // Librairie pour lire le load cell du Zenith. Load cell permet de mesurer le poids du patient
                      // lorsqu'il est complètement soulevé (ne touche plus au sol). HX711 est un amplificateur de signal pour la load cell
                      // (pont de Wheatstone). Documentation: https://www.robotshop.com/ca/en/hx711-load-cell-amplifier.html
-#include <Encoder_Buffer.h> // Librairie pour les encodeurs des vérins SuperDroidRobots (https://github.com/SuperDroidRobots/Encoder-Buffer-Library)
 #include <Adafruit_BNO055.h> // Libraire pour l'orientation des 9 axes de la nouvelle manette (https://learn.adafruit.com/adafruit-bno055-absolute-orientation-sensor)
 #include <Arduino.h> // Librairie pour l'utilisation de la carte Arduino
 #include <Wire.h> //Libairie pour l'utilisation de I2C
 #include <Servo.h> //Libraire pour l'utilisation du servomoteur pour la calibration du IMU (BNO055)
-#include <string.h>
+#include <string.h> 
+//#include <EnableInterrupt.h> //Librairie pour l'utilisation des interruptions externes 
+//#include <encoder.h> //Librairie pour l'utilisation des encodeurs
+#include <QuadratureEncoder.h> //Librairie pour l'utilisation des encodeurs
 
 /*---------------------------------------------------------- Variables et objets ----------------------------------------------------------*/
 /*--- ENCODEURS DE POSITION DES VÉRINS ---*/
-#define EncoderCS1 42 
-#define EncoderCS2 44
+const byte EncoderVerinGauche_A = 40;
+const byte EncoderVerinGauche_B = 41;
+const byte EncoderVerinDroit_A = 48;
+const byte EncoderVerinDroit_B = 49;
+
 
 signed long encoder1count = 0; 
 signed long encoder2count = 0;
@@ -30,15 +35,17 @@ long encoder1Reading = 0;
 long encoder2Reading = 0;
 long encoder1ReadingPrev = 0;
 long encoder2ReadingPrev = 0;
-Encoder_Buffer Encoder1(EncoderCS1);
-Encoder_Buffer Encoder2(EncoderCS2);
+
+Encoders EncoderVerinGauche(EncoderVerinGauche_A, EncoderVerinGauche_B);
+Encoders EncoderVerinDroit(EncoderVerinDroit_A, EncoderVerinDroit_B);
 
 /*--- ENCODEURS AUX ROUES ---*/
-#define EncoderRW 15
-#define EncoderLW 14
-#define EncoderHoleQuantity 16
+const byte EncoderRW = 15; //Pin de l'encodeur de la roue droite
+const byte EncoderLW = 19; //Pin de l'encodeur de la roue gauche
+#define EncoderHoleQuantity 64
 
-long newEncoder3Steps;
+volatile int EncoderStepL;
+volatile int EncoderStepR;
 long oldEncoder3Steps = 0;
 long newEncoder4Steps;
 long oldEncoder4Steps = 0;
@@ -49,8 +56,13 @@ float vitesseDroiteReelle=0;
 float vitesseGaucheReelle=0;
 float vitesseDesiree=0;
 float rayonRoue = 0.1778; //mètres
-long acquisitionTimer =0;
-long acquisitionTime = 1000;
+long acquisitionTimeR = 1000;
+unsigned long lastAcquisitionTimeR = 0;
+long acquisitionTimeL = 1000;
+unsigned long lastAcquisitionTimeL = 0;
+unsigned long TimeDebouceL = 0;
+unsigned long TimeDebouceR = 0;
+
 
 /*--- INTERNAL MESURMENTS UNIT ---*/
 #define RadToDeg  180 / PI
@@ -276,6 +288,10 @@ const byte slaveSelectEnc1 = 44; // Pin Slave du quad encoder counter 1
 const byte slaveSelectEnc2 = 42; // Pin Slave du quad encoder counter 2
 const byte dat = 24;             // Pin data du load cell amp
 const byte clk = 22;             // Pin clock du load cell amp
+const byte LimitSwitchBD = 29;   // Limit switch bas côté batterie
+const byte LimitSwitchHD = 31;   // Limit switch haut côté batterie
+const byte LimitSwitchBG = 26;   // Limit switch bas côté contrôleur
+const byte LimitSwitchHG = 27;   // Limit switch haut côté contrôleur
 
 /*--- Maintien ---*/
 const byte fg = 11;  // Fourchette côté batterie
@@ -303,7 +319,10 @@ void Break();  // Actionner les freins des roues motrices
 void asserMoteurs();
 void motorDriveCalc(); // Définit les PWMs finaux envoyés aux roues motrices selon les commandes de la manette ou des poignées
 void machine_stop();   // Arrête le Zenith dans le cas où aucune commande est envoyée pendant la durée du watchdog timer
-void acquisitionEncoder();
+void acquisitionEncoderL();
+void acquisitionEncoderR();
+void encoderSpeedCalc();
+
 /*--- INTERNAL MESUREMENTS UNIT ---*/
 float lectureAngle();
 void envoieValeurs();

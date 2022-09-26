@@ -18,6 +18,7 @@ void setup()
   Wire.begin(4); 
   Wire.onReceive(receiveEvent); // register event
 
+
   // //EEPROM
   poidsOffset = 0; //EEPROM.read(eepromPoidsOffsetAddr) - 128; // Lecture EEPROM
 
@@ -39,6 +40,10 @@ void setup()
   pinMode(dmg, OUTPUT);
   pinMode(mag, OUTPUT);
   pinMode(updn, INPUT);
+  pinMode(LimitSwitchBD,INPUT_PULLUP);
+  pinMode(LimitSwitchBG,INPUT_PULLUP);
+  pinMode(LimitSwitchHD,INPUT_PULLUP);
+  pinMode(LimitSwitchHG,INPUT_PULLUP);
   pinMode(lmt, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(boutr, INPUT_PULLUP);
@@ -51,8 +56,11 @@ void setup()
   pinMode(ledVerte, OUTPUT);
   pinMode(EncoderRW, INPUT_PULLUP);
   pinMode(EncoderLW, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(EncoderRW),acquisitionEncoder,FALLING);
-  attachInterrupt(digitalPinToInterrupt(EncoderLW),acquisitionEncoder,FALLING);
+ // attachInterrupt(digitalPinToInterrupt(EncoderRW),acquisitionEncoderR,FALLING);
+ // attachInterrupt(digitalPinToInterrupt(EncoderLW),acquisitionEncoderL,FALLING);
+  //enableInterrupt(EncoderRW, acquisitionEncoderR, FALLING);
+  //enableInterrupt(EncoderLW, acquisitionEncoderL, FALLING);
+
   // pinMode(30, OUTPUT);
   
   // // Établit la liste des items Nextion à surveiller (items qui peuvent être appuyés) pour l'écran
@@ -70,10 +78,8 @@ void setup()
   bMode4.attachPop(bMode4PopCallback, &bMode4);
 
   // // Initialisation du compteur des encodeurs quad, vérins
-  Encoder1.initEncoder();
-  Encoder2.initEncoder();
-  Encoder1.clearEncoderCount(); // Clear Encoder
-  Encoder2.clearEncoderCount();
+  EncoderVerinGauche.setEncoderCount(0); // Clear Encoder
+  EncoderVerinDroit.setEncoderCount(0); // Clear Encoder
   referenceBouton = analogRead(updn);
   nexInit();                    // Initialisation de la librairie de l'Écran
   delay(10);
@@ -92,17 +98,24 @@ void setup()
 void loop()
 {
   nexLoop(nex_listen_list); // Écoute les items Nextion
-  Serial.print("updn: ");
-  Serial.println(analogRead(updn));
+
+  Serial.print(" EncoderVerinGauche: ");
+  Serial.print(EncoderVerinGauche.getEncoderCount());
+  
+  Serial.print("     EncoderVerinDroit: ");
+  Serial.println(EncoderVerinDroit.getEncoderCount());  
+
+
+
+  
+
   switch (npage)
   {       // Algo selon le numéro de page de l'écran
   case 1: // Interface normale
-
+    
     if ((millis() - jerkTimer) > jerkTime)
     { // limitation de la fréquence de m-à-j des PWMs
-      vitesseDroiteReelle = newEncoder3Steps*6.283185*rayonRoue*3.6/(EncoderHoleQuantity*acquisitionTime/1000);
-      //Serial.println(newEncoder3Steps);
-      newEncoder3Steps=0;
+      encoderSpeedCalc();
       motorDriveCalc();
       consigneVerins();
       verinDriveCalc();
@@ -151,9 +164,7 @@ void loop()
 
     if ((millis() - jerkTimer) > jerkTime)
     { // limitation de la fréquence de m-à-j des PWMs
-      vitesseDroiteReelle = newEncoder3Steps*6.283185*rayonRoue*3.6/(EncoderHoleQuantity*acquisitionTime/1000);
-      //Serial.println(newEncoder3Steps);
-      newEncoder3Steps=0;
+      encoderSpeedCalc();
       motorDriveCalc();
       consigneVerins();
       verinDriveCalc();
@@ -232,7 +243,6 @@ void riseBreaks()
 }
 void Break()
 { 
-  Serial.println("dans break");
   wheelstopped = 1;
   digitalWrite(bkd, LOW);
   digitalWrite(bkg, LOW);
@@ -320,9 +330,48 @@ void machine_stop()
   watchdog = 0;
 }
 
-void acquisitionEncoder()
+void acquisitionEncoderL()
 {
-  newEncoder3Steps = newEncoder3Steps+1;
+  if (millis()-TimeDebouceL > 7)
+    EncoderStepL ++;
+
+  TimeDebouceL = millis();
+}
+void acquisitionEncoderR()
+{
+  if (millis()-TimeDebouceR > 7)
+    EncoderStepR ++;
+
+  TimeDebouceR = millis();
+}
+void encoderSpeedCalc(){
+    if(EncoderStepR>8){
+      acquisitionTimeR = millis() - lastAcquisitionTimeR;
+      vitesseDroiteReelle = EncoderStepR*6.283185*rayonRoue/(EncoderHoleQuantity*acquisitionTimeR/1000); //  m/s
+      vitesseDroiteReelle = (1/vitesseDroiteReelle)*3; //secondes / m
+
+        /*Serial.print("Vitesse Droite reelle: ");
+        Serial.print(vitesseDroiteReelle);*/
+        lastAcquisitionTimeR = millis();
+        noInterrupts();
+        EncoderStepR=0;
+        interrupts();
+    }
+
+      if(EncoderStepL>8){
+      acquisitionTimeL = millis() - lastAcquisitionTimeL;
+      vitesseGaucheReelle = EncoderStepL*6.283185*rayonRoue/(EncoderHoleQuantity*acquisitionTimeL/1000); //  m/s
+      vitesseGaucheReelle = (1/vitesseGaucheReelle)*3; //secondes / m
+
+        /*Serial.print("                  Vitesse Gauche reelle: ");
+        Serial.println(vitesseGaucheReelle);*/
+
+      lastAcquisitionTimeL = millis();
+      noInterrupts();
+      EncoderStepL=0;
+      interrupts();
+    }
+
 }
 
 /*--- INTERNAL MESUREMENT UNIT ---*/
@@ -431,33 +480,50 @@ void asserVerins()
 } // Fin asserVerins
 void consigneVerins()
 {
-  encoder1ReadingPrev = encoder1Reading;
-  encoder2ReadingPrev = encoder2Reading;
-  encoder1Reading = Encoder1.readEncoder();
-  encoder2Reading = Encoder2.readEncoder();
+  //Asservir les vérins si la vitesse est suffisante
   if ((abs(PWM_VG_reel) > 40) || (abs(PWM_VD_reel) > 40))
   {
-    if (!abs(encoder1ReadingPrev - encoder1Reading) && !abs(encoder2ReadingPrev - encoder2Reading))
-    {
-      if (lmtTrigg > 10)
-      {
-        Encoder1.clearEncoderCount();
-        Encoder2.clearEncoderCount();
-        encoder1ReadingPrev = 0;
-        encoder2ReadingPrev = 0;
-      }
-      else
-      {
-        lmtTrigg++;
-      }
-    }
-    else
-    {
-      lmtTrigg = 0;
       asserVerins();
+  }
+
+  //Vérification des limit switch et changement du PWM en conséquence
+  if (digitalRead(LimitSwitchBG) == HIGH)
+  {
+    EncoderVerinGauche.setEncoderCount(0); // Reset de l'encodeur si la limite est atteinte
+    if (PWMVG > 0)
+    {
+      PWMVG = 0;
+      PWM_VG_reel = 0;
     }
   }
+  if (digitalRead(LimitSwitchBD) == HIGH)
+  {
+    EncoderVerinDroit.setEncoderCount(0); // Reset de l'encodeur si la limite est atteinte
+    if (PWMVD > 0)
+    {
+      PWMVD = 0;
+      PWM_VD_reel = 0;
+    }
+  }
+if (digitalRead(LimitSwitchHG) == HIGH)
+{
+  if (PWMVG < 0)
+  {
+    PWMVG = 0;
+    PWM_VG_reel = 0;
+  }
+
 }
+if (digitalRead(LimitSwitchHD) == HIGH)
+{
+  if (PWMVD < 0)
+  {
+    PWMVD = 0;
+    PWM_VD_reel = 0;
+  }
+
+}
+} // Fin consigneVerins
 void verinDriveCalc()
 {
   diff_PWM_VG = (PWMVG - PWM_VG_reel) / 2;
@@ -471,7 +537,7 @@ void verinDriveCalc()
     diff_PWM_VG = -10;
     PWM_VG_reel += diff_PWM_VG;
   }
-  else if ((abs(diff_PWM_VG) < 2) && (abs(PWMVG) < 2))
+  else if ((abs(diff_PWM_VG) < 2) && (abs(PWMVG) < 2)) //Vérifier la nécessité de cette condition
   {
     diff_PWM_VG = 0;
     PWM_VG_reel = 0;
@@ -502,7 +568,7 @@ void verinDriveCalc()
     diff_PWM_VD = -10;
     PWM_VD_reel += diff_PWM_VD;
   }
-  else if ((abs(diff_PWM_VD) < 2) && (abs(PWMVD) < 2))
+  else if ((abs(diff_PWM_VD) < 2) && (abs(PWMVD) < 2)) //Vérifier la nécessité de cette condition
   {
     diff_PWM_VD = 0;
     PWM_VD_reel = 0;
@@ -532,7 +598,6 @@ void verinManuel()
       PWMVG = 0;
       PWMVD = 0;
       btnreleased = 1;
-      Serial.println("btnreleased");
     }
   }
   else if (btnmanuel > (100))
