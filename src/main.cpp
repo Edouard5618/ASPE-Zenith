@@ -46,23 +46,15 @@ void setup()
   pinMode(LimitSwitchHG,INPUT_PULLUP);
   pinMode(lmt, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(boutr, INPUT_PULLUP);
-  pinMode(swit, INPUT_PULLUP);
+  pinMode(sens, INPUT_PULLUP);
+  pinMode(modePoignees, INPUT_PULLUP);
   pinMode(potd, INPUT_PULLUP);
   pinMode(potg, INPUT_PULLUP);
   pinMode(ledBleue, OUTPUT);
   pinMode(ledJaune, OUTPUT);
   pinMode(ledRouge, OUTPUT);
   pinMode(ledVerte, OUTPUT);
-  pinMode(EncoderRW, INPUT_PULLUP);
-  pinMode(EncoderLW, INPUT_PULLUP);
- // attachInterrupt(digitalPinToInterrupt(EncoderRW),acquisitionEncoderR,FALLING);
- // attachInterrupt(digitalPinToInterrupt(EncoderLW),acquisitionEncoderL,FALLING);
-  //enableInterrupt(EncoderRW, acquisitionEncoderR, FALLING);
-  //enableInterrupt(EncoderLW, acquisitionEncoderL, FALLING);
 
-  // pinMode(30, OUTPUT);
-  
   // // Établit la liste des items Nextion à surveiller (items qui peuvent être appuyés) pour l'écran
   majMaintien.attachPop(majMaintienPopCallback, &majMaintien);
   majVitesse.attachPop(majVitessePopCallback, &majVitesse);
@@ -78,8 +70,11 @@ void setup()
   bMode4.attachPop(bMode4PopCallback, &bMode4);
 
   // // Initialisation du compteur des encodeurs quad, vérins
-  EncoderVerinGauche.setEncoderCount(0); // Clear Encoder
-  EncoderVerinDroit.setEncoderCount(0); // Clear Encoder
+  EncoderVerinGauche.readAndReset(); // Clear Encoder
+  EncoderVerinDroit.readAndReset(); // Clear Encoder
+  EncoderRoueDroite.readAndReset();
+  EncoderRoueGauche.readAndReset();
+
   referenceBouton = analogRead(updn);
   nexInit();                    // Initialisation de la librairie de l'Écran
   delay(10);
@@ -95,76 +90,17 @@ void setup()
 
   bStat.setText("Statut: off");
 } // fin setup
+
+
+
 void loop()
 {
   nexLoop(nex_listen_list); // Écoute les items Nextion
-
-  Serial.print(" EncoderVerinGauche: ");
-  Serial.print(EncoderVerinGauche.getEncoderCount());
-  
-  Serial.print("     EncoderVerinDroit: ");
-  Serial.println(EncoderVerinDroit.getEncoderCount());  
-
-
-
-  
-
-  switch (npage)
-  {       // Algo selon le numéro de page de l'écran
-  case 1: // Interface normale
-    
-    if ((millis() - jerkTimer) > jerkTime)
-    { // limitation de la fréquence de m-à-j des PWMs
-      encoderSpeedCalc();
-      motorDriveCalc();
-      consigneVerins();
-      verinDriveCalc();
-      jerkTimer = millis();
-    }
-    if ((millis() - battTimer) > battDelay)
-    { // limitation de la fréquence de m-à-j de la charge
-      checkBatt();
-      battTimer = millis();
-    }
-    // M-à-j des PWMs
-    analogWrite(mg, abs(PWMG_reel));
-    analogWrite(md, abs(PWMD_reel));
-    analogWrite(vg, abs(PWM_VG_reel));
-    analogWrite(vd, abs(PWM_VD_reel));
-   if(Wire.available() > 0)
-   {
-     envoieValeurs();
-     processIncomingByte();
-   }
-   else if (watchdog)
-   {
-     if ((millis() - watchdogTimer) > watchdogDelay)
-     { // Manette déconnectée ?
-       machine_stop();
-     }
-   }
-   else
-   {
-     if (activ_poignees == HIGH)
-     { // Lit seulement les valeurs PWM des poignées si les poignées sont activées sur l'écran.
-       ContrlPoignees();
-     }
-     else
-     {
-       digitalWrite(ledBleue, LOW);
-       digitalWrite(ledRouge, LOW);
-       digitalWrite(ledVerte, LOW);
-       digitalWrite(ledJaune, LOW);
-     }
-     verinManuel();
-   }
    
-    break;
-  case 2: // Case 2 est utilisee pour faire des tests
-
     if ((millis() - jerkTimer) > jerkTime)
     { // limitation de la fréquence de m-à-j des PWMs
       encoderSpeedCalc();
+      asserMoteurs();
       motorDriveCalc();
       consigneVerins();
       verinDriveCalc();
@@ -175,55 +111,22 @@ void loop()
       checkBatt();
       battTimer = millis();
     }
-    // M-à-j des PWMs
-    analogWrite(mg, abs(PWMG_reel));
-    analogWrite(md, abs(PWMD_reel));
-    analogWrite(vg, abs(PWM_VG_reel));
-    analogWrite(vd, abs(PWM_VD_reel));
+    MAJ_PWM(); // M-à-j des PWMs
 
    if(Wire.available() > 0)
    {
      envoieValeurs();
      processIncomingByte();
    }
-   else if (watchdog)
-   {
-     if ((millis() - watchdogTimer) > watchdogDelay)
-     { // Manette déconnectée ?
-       machine_stop();
-     }
-   }
    else
    {
-     if (activ_poignees == HIGH)
-     { // Lit seulement les valeurs PWM des poignées si les poignées sont activées sur l'écran
+     if (activ_poignees == HIGH) // Lit seulement les valeurs PWM des poignées si les poignées sont activées sur l'écran.
        ContrlPoignees();
-     }
      else
-     {
-       digitalWrite(ledBleue, LOW);
-       digitalWrite(ledRouge, LOW);
-       digitalWrite(ledVerte, LOW);
-       digitalWrite(ledJaune, LOW);
-     }
+       closeLED();
+
      verinManuel();
    }
-
-    //---------------------------------------- Calibration du loadCell ----------------------------------------
-    // scale.set_scale(5164.67);
-    // scale.tare();
-    // Serial.println("Mettre poids");
-    // delay(5000);
-    // Serial.println("Debut mesure");
-    // Serial.print("poids = ");
-    // Serial.println(scale.get_units(40));
-    //--------------------------------------------------------------------------------------------------------
-
-    break;
-  default:
-    checkpage();
-    break;
-  }
 } // fin loop
 
 void receiveEvent(int howmany)
@@ -249,38 +152,78 @@ void Break()
 }
 void asserMoteurs()
 {
+  vitesseDesireeDroite = -coefVitesse*PWMD/255.0;
+  vitesseDesireeGauche = -coefVitesse*PWMG/255.0;
+
   // À compléter pour l'algorithme de contrôle PID
-  // eM = vitesseDroiteReelle - vitesseDesiree;
-  // if (abs(eM) >= eMinM)
-  // {
-  //   cumErrorM = eM + lastErrorM;    // Integrale
-  //   rateErrorM = (eM - lastErrorM); // Dérivée
-  //   if (rateErrorM > rateErrorMaxM)
-  //   {
-  //     rateErrorM = rateErrorMaxM;
-  //   }
-  //   outputM = kpM * eM + kiM * cumErrorM + kdM * rateErrorM; // PID output
-  //   if (outputM > outputMaxM)
-  //   {
-  //     outputM = outputMaxM;
-  //   }
-  //   else if (outputM < -outputMaxM)
-  //   {
-  //     outputM = -outputMaxM;
-  //   }
-  //   lastErrorM = eM; // Remember current error
-  //   PWMD += outputM;
-  // }
-  // else
-  // {
-  //   rateErrorM = 0;
-  // }
+  eM = vitesseDesireeDroite- vitesseDroiteReelle;
+  if (abs(eM) >= eMinM)
+  {
+    cumErrorM_R += eM;    // Integrale
+    rateErrorM_R = (eM - lastErrorM_R); // Dérivée
+    if (rateErrorM_R > rateErrorMaxM)
+    {
+      rateErrorM_R = rateErrorMaxM;
+    }
+    outputM = kpM * eM + kiM * cumErrorM_R + kdM * rateErrorM_R; // PID output
+
+    if (outputM > outputMaxM)
+      outputM = outputMaxM;
+    else if (outputM < -outputMaxM)
+      outputM = -outputMaxM;
+
+    lastErrorM_R = eM; // Remember current error
+    PWMD += (int)outputM;
+    
+  }
+  else
+  {
+    rateErrorM_R = 0;
+  }
+
+
+  eM = vitesseDesireeGauche - vitesseGaucheReelle;
+  if (abs(eM) >= eMinM)
+  {
+    cumErrorM_L = eM + lastErrorM_L;    // Integrale
+    rateErrorM_L = (eM - lastErrorM_L); // Dérivée
+    if (rateErrorM_L > rateErrorMaxM)
+    {
+      rateErrorM_L = rateErrorMaxM;
+    }
+    outputM = kpM * eM + kiM * cumErrorM_L + kdM * rateErrorM_L; // PID output
+
+    if (outputM > outputMaxM)
+      outputM = outputMaxM;
+    else if (outputM < -outputMaxM)
+      outputM = -outputMaxM;
+
+    lastErrorM_L = eM; // Remember current error
+    PWMG += (int)outputM;
+    
+  }
+  else
+  {
+    rateErrorM_L = 0;
+  }
+
+Serial.print("VitesseDroiteRelle: ");
+Serial.print(vitesseDroiteReelle);
+Serial.print(" VitesseDroiteDesiree: ");
+Serial.print(vitesseDesireeDroite);
+Serial.print(" VitesseGaucheRelle: ");
+Serial.print(vitesseGaucheReelle);
+Serial.print(" VitesseGaucheDesiree: ");
+Serial.println(vitesseDesireeGauche);
+
+
+
   } // Fin asserMoteurs 
 void motorDriveCalc()
 {
   if (activ_poignees == HIGH){
-    mode = abs(1-digitalRead(swit));
-    dir = abs(1-digitalRead(boutr));
+    mode = abs(1-digitalRead(modePoignees));
+    dir = abs(1-digitalRead(sens));
     delay(15);
   }
   // Moteur côté controlleur  ------------------------------------------------------
@@ -327,51 +270,33 @@ void machine_stop()
   PWMG = 0;
   PWMVG = 0;
   PWMVD = 0;
-  watchdog = 0;
-}
-
-void acquisitionEncoderL()
-{
-  if (millis()-TimeDebouceL > 7)
-    EncoderStepL ++;
-
-  TimeDebouceL = millis();
-}
-void acquisitionEncoderR()
-{
-  if (millis()-TimeDebouceR > 7)
-    EncoderStepR ++;
-
-  TimeDebouceR = millis();
 }
 void encoderSpeedCalc(){
-    if(EncoderStepR>8){
-      acquisitionTimeR = millis() - lastAcquisitionTimeR;
-      vitesseDroiteReelle = EncoderStepR*6.283185*rayonRoue/(EncoderHoleQuantity*acquisitionTimeR/1000); //  m/s
-      vitesseDroiteReelle = (1/vitesseDroiteReelle)*3; //secondes / m
 
-        /*Serial.print("Vitesse Droite reelle: ");
-        Serial.print(vitesseDroiteReelle);*/
-        lastAcquisitionTimeR = millis();
-        noInterrupts();
-        EncoderStepR=0;
-        interrupts();
-    }
+  
+      acquisitionTimeRight = millis() - lastacquisitionTimeRight;
 
-      if(EncoderStepL>8){
-      acquisitionTimeL = millis() - lastAcquisitionTimeL;
-      vitesseGaucheReelle = EncoderStepL*6.283185*rayonRoue/(EncoderHoleQuantity*acquisitionTimeL/1000); //  m/s
-      vitesseGaucheReelle = (1/vitesseGaucheReelle)*3; //secondes / m
+      if(acquisitionTimeRight > 90){    //Limiter la vitesse d'acquisition pour avoir de meilleures données.
 
-        /*Serial.print("                  Vitesse Gauche reelle: ");
-        Serial.println(vitesseGaucheReelle);*/
+      vitesseDroiteReelle = (EncoderRoueDroite.read()*6.283185*rayonRoue/(EncoderHoleQuantity*acquisitionTimeRight/1000))*M_S_TO_KM_H; //Vitesse en km/h
+      lastacquisitionTimeRight = millis();
+      EncoderRoueDroite.readAndReset();
 
-      lastAcquisitionTimeL = millis();
-      noInterrupts();
-      EncoderStepL=0;
-      interrupts();
-    }
 
+
+      acquisitionTimeLeft = millis() - lastacquisitionTimeLeft;
+      vitesseGaucheReelle = (EncoderRoueGauche.read()*6.283185*rayonRoue/(EncoderHoleQuantity*acquisitionTimeLeft/1000))*M_S_TO_KM_H; //Vitesse en km/h
+      lastacquisitionTimeLeft = millis();
+      EncoderRoueGauche.readAndReset();
+
+
+  }
+}
+void MAJ_PWM(){
+    analogWrite(mg, abs(PWMG_reel));
+    analogWrite(md, abs(PWMD_reel));
+    analogWrite(vg, abs(PWM_VG_reel));
+    analogWrite(vd, abs(PWM_VD_reel));
 }
 
 /*--- INTERNAL MESUREMENT UNIT ---*/
@@ -489,7 +414,7 @@ void consigneVerins()
   //Vérification des limit switch et changement du PWM en conséquence
   if (digitalRead(LimitSwitchBG) == HIGH)
   {
-    EncoderVerinGauche.setEncoderCount(0); // Reset de l'encodeur si la limite est atteinte
+    EncoderVerinGauche.readAndReset(); // Reset de l'encodeur si la limite est atteinte
     if (PWMVG > 0)
     {
       PWMVG = 0;
@@ -498,7 +423,7 @@ void consigneVerins()
   }
   if (digitalRead(LimitSwitchBD) == HIGH)
   {
-    EncoderVerinDroit.setEncoderCount(0); // Reset de l'encodeur si la limite est atteinte
+    EncoderVerinDroit.readAndReset(); // Reset de l'encodeur si la limite est atteinte
     if (PWMVD > 0)
     {
       PWMVD = 0;
@@ -550,12 +475,10 @@ void verinDriveCalc()
   if (PWM_VG_reel < 0)
   {
     digitalWrite(vdg, LOW);
-    digitalWrite(vdd, LOW);
   }
   else
   {
     digitalWrite(vdg, HIGH);
-    digitalWrite(vdd, HIGH);
   }
   diff_PWM_VD = (PWMVD - PWM_VD_reel) / 2;
   if (diff_PWM_VD > 10)
@@ -579,12 +502,10 @@ void verinDriveCalc()
   }
   if (PWM_VD_reel < 0)
   {
-    digitalWrite(vdg, LOW);
     digitalWrite(vdd, LOW);
   }
   else
   {
-    digitalWrite(vdg, HIGH);
     digitalWrite(vdd, HIGH);
   }
 } // Fin verinDriveCalc
@@ -605,17 +526,27 @@ void verinManuel()
     PWMVG = liftCoef;
     PWMVD = liftCoef;
     btnreleased = 0;
-    Serial.println("down");
+    //Serial.println("down");
   }
   else
   {
     PWMVG = -liftCoef;
     PWMVD = -liftCoef;
     btnreleased = 0;
-    Serial.println("up");
+   // Serial.println("up");
   }
 }
-
+void LoadCellCalib(){
+    //---------------------------------------- Calibration du loadCell ----------------------------------------
+    scale.set_scale(5164.67);
+    scale.tare();
+    Serial.println("Mettre poids");
+    delay(5000);
+    Serial.println("Debut mesure");
+    Serial.print("poids = ");
+    Serial.println(scale.get_units(40));
+    //--------------------------------------------------------------------------------------------------------
+}
 /*--- MAINTIEN ---*/
 void springCalc()
 { 
@@ -823,6 +754,7 @@ void process_data (String data)
   signal_x = map((data.substring(1,5)).toInt(),1000,2024,255,-255);
   signal_y = map((data.substring(5,9)).toInt(),1000,2024,255,-255);
 
+
   pwmD_Value = -(float)(signal_x + signal_y);
   pwmG_Value = (float)(-signal_x + signal_y);
   if (pwmD_Value > 255)
@@ -834,8 +766,8 @@ void process_data (String data)
   else if (pwmG_Value < -255)
     pwmG_Value = -255;
 
-  pwmD_Value = pwmD_Value / 512 * speedcoef * jogCoef; // Scale 255 selon limite jogCoef, pour PWM
-  pwmG_Value = pwmG_Value / 512 * speedcoef * jogCoef;
+  pwmD_Value = pwmD_Value / 512 * coefVitesse * jogCoef; // Scale 255 selon limite jogCoef, pour PWM
+  pwmG_Value = pwmG_Value / 512 * coefVitesse * jogCoef;
   PWMD = int(pwmD_Value);
   PWMG = int(pwmG_Value);
   
@@ -864,10 +796,6 @@ void process_data (String data)
   PWMVD = liftCoef;
   //Serial.println("DOWN");
   }
-
-  
-  watchdog = 1;
-  watchdogTimer = millis();
 }  // Fin process_data
 void processIncomingByte ()
 {
@@ -932,38 +860,38 @@ void ContrlPoignees()
 
     if (nmode == 1)
     {       // Algo selon le numéro de mode de contrôle
-        PWMG = int ((pwmg*speedcoef)/16);
-        PWMD = int ((pwmd*speedcoef)/16);
+        PWMG = int ((pwmg*coefVitesse)/16);
+        PWMD = int ((pwmd*coefVitesse)/16);
     }
     else if (nmode == 2)
     {
       if (dir==HIGH)
       {
-       PWMG = int ((pwmd*speedcoef)/16);
-       PWMD = int ((pwmg*speedcoef)/16);
+       PWMG = int ((pwmd*coefVitesse)/16);
+       PWMD = int ((pwmg*coefVitesse)/16);
       }
       else
       {
-       PWMG = int ((pwmg*speedcoef)/16);
-       PWMD = int ((pwmd*speedcoef)/16);
+       PWMG = int ((pwmg*coefVitesse)/16);
+       PWMD = int ((pwmd*coefVitesse)/16);
       }
     }
     else if (nmode == 3)
     {
-       PWMG = int ((pwmd*speedcoef)/16);
-       PWMD = int ((pwmg*speedcoef)/16);
+       PWMG = int ((pwmd*coefVitesse)/16);
+       PWMD = int ((pwmg*coefVitesse)/16);
     }
     else if (nmode == 4)
     {
       if (dir==HIGH)
       {
-       PWMG = int ((pwmg*speedcoef)/16);
-       PWMD = int ((pwmd*speedcoef)/16);
+       PWMG = int ((pwmg*coefVitesse)/16);
+       PWMD = int ((pwmd*coefVitesse)/16);
       }
       else
       {
-       PWMG = int ((pwmd*speedcoef)/16);
-       PWMD = int ((pwmg*speedcoef)/16);
+       PWMG = int ((pwmd*coefVitesse)/16);
+       PWMD = int ((pwmg*coefVitesse)/16);
       }
     }
     
@@ -975,8 +903,8 @@ void ContrlPoignees()
 
     pwm_min = min(pwmg, pwmd); // Mode solidaire contrôle les deux roues à la même vitesse selon la gâchette la moins pressée.
                                // Adapté pour les patients hémiplégiques (moitié gauche/droite du corps avec moins de contrôle moteur et/ou force).
-    PWMG = int((pwm_min * speedcoef) / 16);
-    PWMD = int((pwm_min * speedcoef) / 16);
+    PWMG = int((pwm_min * coefVitesse) / 16);
+    PWMD = int((pwm_min * coefVitesse) / 16);
   }
 
   if(dir == HIGH)
@@ -989,6 +917,13 @@ void ContrlPoignees()
     digitalWrite(ledRouge, HIGH);
     digitalWrite(ledJaune, LOW); 
   }
+}
+void closeLED()
+{
+  digitalWrite(ledBleue, LOW);
+  digitalWrite(ledRouge, LOW);
+  digitalWrite(ledVerte, LOW);
+  digitalWrite(ledJaune, LOW);
 }
 
 /*--- ÉCRAN ---*/
@@ -1050,8 +985,9 @@ void majMaintienPopCallback(void *ptr)
 void majVitessePopCallback(void*ptr)
 {
   Vitesse.getValue(&speedcoef);
-  speedcoef /= 5.75;  // Facteur arbitraire ajouté pour limiter la vitesse du Zénith, qui était dangereux à vitesse max
-  vitesseDesiree = speedcoef;
+  coefVitesse = speedcoef;
+  coefVitesse /= 4.25;  // Facteur arbitraire ajouté pour limiter la vitesse du Zénith, qui était dangereux à vitesse max
+
   msgvitesse.setText("La vitesse a ete mise a jour"); 
 }
 void okPopCallback(void *ptr)

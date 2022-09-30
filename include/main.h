@@ -18,13 +18,13 @@
 #include <Servo.h> //Libraire pour l'utilisation du servomoteur pour la calibration du IMU (BNO055)
 #include <string.h> 
 //#include <EnableInterrupt.h> //Librairie pour l'utilisation des interruptions externes 
-//#include <encoder.h> //Librairie pour l'utilisation des encodeurs
-#include <QuadratureEncoder.h> //Librairie pour l'utilisation des encodeurs
+#include <encoder.h> //Librairie pour l'utilisation des encodeurs
+//#include <QuadratureEncoder.h> //Librairie pour l'utilisation des encodeurs
 
 /*---------------------------------------------------------- Variables et objets ----------------------------------------------------------*/
 /*--- ENCODEURS DE POSITION DES VÉRINS ---*/
-const byte EncoderVerinGauche_A = 40;
-const byte EncoderVerinGauche_B = 41;
+const byte EncoderVerinGauche_A = 48;
+const byte EncoderVerinGauche_B = 49;
 const byte EncoderVerinDroit_A = 48;
 const byte EncoderVerinDroit_B = 49;
 
@@ -36,13 +36,20 @@ long encoder2Reading = 0;
 long encoder1ReadingPrev = 0;
 long encoder2ReadingPrev = 0;
 
-Encoders EncoderVerinGauche(EncoderVerinGauche_A, EncoderVerinGauche_B);
-Encoders EncoderVerinDroit(EncoderVerinDroit_A, EncoderVerinDroit_B);
+Encoder EncoderVerinGauche(EncoderVerinGauche_A, EncoderVerinGauche_B);
+Encoder EncoderVerinDroit(EncoderVerinDroit_A, EncoderVerinDroit_B);
 
 /*--- ENCODEURS AUX ROUES ---*/
-const byte EncoderRW = 15; //Pin de l'encodeur de la roue droite
-const byte EncoderLW = 19; //Pin de l'encodeur de la roue gauche
-#define EncoderHoleQuantity 64
+const byte EncoderRW_A = 18; //Pin de l'encodeur de la roue droite
+const byte EncoderRW_B = 15; 
+const byte EncoderLW_A = 19; //Pin de l'encodeur de la roue gauche
+const byte EncoderLW_B = 14; 
+
+Encoder EncoderRoueGauche(EncoderLW_A, EncoderLW_B);
+Encoder EncoderRoueDroite(EncoderRW_A, EncoderRW_B);
+
+#define EncoderHoleQuantity 2400
+#define M_S_TO_KM_H 3.6
 
 volatile int EncoderStepL;
 volatile int EncoderStepR;
@@ -54,12 +61,13 @@ unsigned long endTime =0;
 float temp=0;
 float vitesseDroiteReelle=0;
 float vitesseGaucheReelle=0;
-float vitesseDesiree=0;
+float vitesseDesireeDroite = 0;
+float vitesseDesireeGauche = 0;
 float rayonRoue = 0.1778; //mètres
-long acquisitionTimeR = 1000;
-unsigned long lastAcquisitionTimeR = 0;
-long acquisitionTimeL = 1000;
-unsigned long lastAcquisitionTimeL = 0;
+long acquisitionTimeRight = 1000;
+unsigned long lastacquisitionTimeRight = 0;
+long acquisitionTimeLeft = 1000;
+unsigned long lastacquisitionTimeLeft = 0;
 unsigned long TimeDebouceL = 0;
 unsigned long TimeDebouceR = 0;
 
@@ -84,6 +92,7 @@ int eepromPoidsOffsetAddr = 0;
 int directiontemp = 0;  // Variable temporaire
 int modetemp = 0;       // Variable temporaire
 uint32_t speedcoef = 0; // Vitesse de déplacement, variant entre 0 et 10 (valeur par défaut)
+float coefVitesse = 0;  // Coefficient de vitesse, variant entre 0 et 10 (valeur par défaut)
 int JogX;               // Axe X issue du joystick de la manette
 int JogY;               // Axe Y issue du joystick de la manette
 int jogCoef = 19.1;     // Multiple de speedcoef
@@ -128,16 +137,16 @@ bool PIDset = 0;            // Les boutons scroll ont été mis à jour ?
 HX711 scale;                // Objet pour amplificateur cellule de charge
 
 /*Asservissement PID Moteur*/
-int eM = 0;                  // Erreur asservissement vérin (écart entre les compteurs effet Hall gauche vs droit)
-int eMinM = 1;               // Erreur minimale tenue en compte (dead zone)
-double lastErrorM;           // Buffer pour calcul de la dérivée
-double cumErrorM, rateErrorM; // Intégrale et dérivée du PID
+float eM = 0;                  // Erreur asservissement vérin (écart entre les compteurs effet Hall gauche vs droit)
+float eMinM = 0.2;               // Erreur minimale tenue en compte (dead zone)
+double lastErrorM_R, lastErrorM_L;           // Buffer pour calcul de la dérivée
+double cumErrorM_R, rateErrorM_R, cumErrorM_L, rateErrorM_L; // Intégrale et dérivée du PID
 int rateErrorMaxM = 10;      // Valeur maxi de dérivée du PID
-float kpM = 1;               // Coefficient proportionnel
+float kpM = 3;               // Coefficient proportionnel
 float kiM = 0;               // Coefficient intégral
 float kdM = 0;               // Coefficient dérivée
 double outputM;              // Écart appliqué entre les PWMs des vérins gauche et droit
-int outputMaxM = 60;         // Valeur maxi de output (anti windup)
+int outputMaxM = 25;         // Valeur maxi de output (anti windup)
 
 /*--- MAINTIEN ---*/
 uint32_t pcmaintien = 50; // Pourcentage de maintien entre 0 et 100 (valeur par défaut)
@@ -182,9 +191,7 @@ char chaine[MAX_INPUT];
 int signal_verin;
 int signal_x;
 int signal_y;
-bool watchdog = 0; // Watchdog pour signal manette actif ?
-unsigned long watchdogTimer = millis();
-unsigned long watchdogDelay = 800; // Watchdog déclare la manette déconnectée après ce délai sans communication
+int signal_Joystick;
 bool manette_en_cours = 0;         // La manette est en train de communiquer avec le contrôleur
 
 /*--- Signal BLE manette ---*/
@@ -288,10 +295,10 @@ const byte slaveSelectEnc1 = 44; // Pin Slave du quad encoder counter 1
 const byte slaveSelectEnc2 = 42; // Pin Slave du quad encoder counter 2
 const byte dat = 24;             // Pin data du load cell amp
 const byte clk = 22;             // Pin clock du load cell amp
-const byte LimitSwitchBD = 29;   // Limit switch bas côté batterie
-const byte LimitSwitchHD = 31;   // Limit switch haut côté batterie
-const byte LimitSwitchBG = 26;   // Limit switch bas côté contrôleur
-const byte LimitSwitchHG = 27;   // Limit switch haut côté contrôleur
+const byte LimitSwitchBD = 29;   // Limit switch bas côté controller
+const byte LimitSwitchHD = 31;   // Limit switch haut côté controller
+const byte LimitSwitchBG = 40;   // Limit switch bas côté batterie
+const byte LimitSwitchHG = 41;   // Limit switch haut côté batterie
 
 /*--- Maintien ---*/
 const byte fg = 11;  // Fourchette côté batterie
@@ -305,8 +312,8 @@ const byte bat = A1; // Pin pour lire la capacité de la batterie
 /*--- Poignées ---*/
 const byte potg = A11; // Potentiomètre de la gachette de la poignée côté batterie pour contrôler la vitesse des roues motrices côté batterie
 const byte potd = A12; // Potentiomètre de la gachette de la poignée côté contrôleur pour contrôler la vitesse des roues motrices côté contrôleur
-const byte swit = 7;   // Switch pour décider le mode d'avance du Zenith à partir des gachettes (roues motrices indépendantes ou solidaires)
-const byte boutr = 2;  // Bouton pour alterner entre la marche avant ou arrière des roues motrices
+const byte modePoignees= 7;   // Switch pour décider le mode d'avance du Zenith à partir des gachettes (roues motrices indépendantes ou solidaires)
+const byte sens = 2;  // Bouton pour alterner entre la marche avant ou arrière des roues motrices
 const byte ledRouge = 34; // LED qui indique que le Zénith se déplace vers l'arrière
 const byte ledJaune = 32; // LED qui indique que le Zénith se déplace vers l'avant
 const byte ledBleue = 28; // LED qui indique que les poignées sont en mode indépendantes
@@ -318,10 +325,11 @@ void riseBreaks();     // Désactiver les freins des roues motrices
 void Break();  // Actionner les freins des roues motrices
 void asserMoteurs();
 void motorDriveCalc(); // Définit les PWMs finaux envoyés aux roues motrices selon les commandes de la manette ou des poignées
-void machine_stop();   // Arrête le Zenith dans le cas où aucune commande est envoyée pendant la durée du watchdog timer
+void machine_stop();   // Arrête le Zenith
 void acquisitionEncoderL();
 void acquisitionEncoderR();
 void encoderSpeedCalc();
+void MAJ_PWM();
 
 /*--- INTERNAL MESUREMENTS UNIT ---*/
 float lectureAngle();
@@ -336,6 +344,7 @@ void verinDriveCalc();
 void setPIDValues();
 void PIDScrollValues();
 void verinManuel();     // Commande des verins de levage avec l'interrupteur noir du côté contrôleur du Zenith
+void LoadCellCalib();   // Calibration de la load cell
 
 /*--- MAINTIEN ---*/
 void springCalc(); // Calcul des combinaisons de ressorts pour trouver la combinaison optimale pour le poids à compenser
@@ -357,6 +366,7 @@ void receiveEvent(int howMany);
 /*--- POIGNÉES ---*/
 void ContrlPoignees(); // Fonction qui définit PWMD et PWMG selon les commandes des poignées
 int smoothing(const byte analogPin);
+void closeLED();
 
 /*--- ÉCRAN ---*/
 void tracePoids();
