@@ -1,8 +1,7 @@
-/* Code principal du Zenith, téléchargé sur le Arduino Mega. Comprend les fonctions qui prennent en charge tout les sous-systèmes de la machine, 
- * sauf pour le GUI de l'écran en temps que tel. Pour modifier le GUI de l'écran, se référer au programme Nextion "GUI écran Zénith".  
+/* Code principal du Zenith, téléchargé sur le Arduino Mega. Comprend les fonctions qui prennent en charge tout les sous-systèmes de la machine,
+ * sauf pour le GUI de l'écran en temps que tel. Pour modifier le GUI de l'écran, se référer au programme Nextion "GUI écran Zénith".
  */
 #include "main.h"
-
 
 //-------------------------------------------------------------------------------------------------------------
 // DEBUT SETUP ET LOOP
@@ -15,12 +14,10 @@ void setup()
   Serial1.begin(115200);
   Serial2.begin(115200);
   SPI.begin();
-  Wire.begin(4); 
-  Wire.onReceive(receiveEvent); // register event
-
+  Wire.begin(4);
 
   // //EEPROM
-  poidsOffset = 0; //EEPROM.read(eepromPoidsOffsetAddr) - 128; // Lecture EEPROM
+  poidsOffset = 0; // EEPROM.read(eepromPoidsOffsetAddr) - 128; // Lecture EEPROM
 
   // // Augmentation de la frequence PWM pour les moteurs et les verins
   TCCR2B = (TCCR2B & 0b11111000) | 0x01;
@@ -40,10 +37,10 @@ void setup()
   pinMode(dmg, OUTPUT);
   pinMode(mag, OUTPUT);
   pinMode(updn, INPUT);
-  pinMode(LimitSwitchBD,INPUT_PULLUP);
-  pinMode(LimitSwitchBG,INPUT_PULLUP);
-  pinMode(LimitSwitchHD,INPUT_PULLUP);
-  pinMode(LimitSwitchHG,INPUT_PULLUP);
+  pinMode(LimitSwitchBD, INPUT_PULLUP);
+  pinMode(LimitSwitchBG, INPUT_PULLUP);
+  pinMode(LimitSwitchHD, INPUT_PULLUP);
+  pinMode(LimitSwitchHG, INPUT_PULLUP);
   pinMode(lmt, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(sens, INPUT_PULLUP);
@@ -68,98 +65,113 @@ void setup()
   bMode2.attachPop(bMode2PopCallback, &bMode2);
   bMode3.attachPop(bMode3PopCallback, &bMode3);
   bMode4.attachPop(bMode4PopCallback, &bMode4);
+  bStat.setText("Statut: off");
+  nexInit(); // Initialisation de la librairie de l'Écran
+  delay(10);
 
   // // Initialisation du compteur des encodeurs quad, vérins
-  EncoderVerinGauche.readAndReset(); // Clear Encoder
-  EncoderVerinDroit.readAndReset(); // Clear Encoder
-  EncoderRoueDroite.readAndReset();
-  EncoderRoueGauche.readAndReset();
+  EncodeurVerinGauche.readAndReset(); // Clear Encodeur
+  EncodeurVerinDroit.readAndReset();  // Clear Encodeur
+  EncodeurRoueDroite.readAndReset();
+  EncodeurRoueGauche.readAndReset();
 
-  referenceBouton = analogRead(updn);
-  nexInit();                    // Initialisation de la librairie de l'Écran
-  delay(10);
-  
-  Serial.println("Start"); // Checkup série
-  
-  scale.begin(dat, clk);    //Pins pour le Output des donnees et la Clock.
-  scale.set_scale(5164.67); //Scale trouver apres la calibration des donnees
+  // // Initialisation de la balance
+  scale.begin(dat, clk);    // Pins pour le Output des donnees et la Clock.
+  scale.set_scale(5164.67); // Scale trouver apres la calibration des donnees
   scale.tare();             // Mise à zéro de la pesée
   scale.power_down();
-
   springCalc(); // Calcul des combinaisons de ressorts
 
-  bStat.setText("Statut: off");
+  // // Initialisation de la valeur du bouton UpDn
+  referenceBouton = analogRead(updn);
+
+  Serial.println("Start"); // Checkup série
 } // fin setup
-
-
-
 void loop()
 {
   nexLoop(nex_listen_list); // Écoute les items Nextion
-   
-    if ((millis() - jerkTimer) > jerkTime)
-    { // limitation de la fréquence de m-à-j des PWMs
-      encoderSpeedCalc();
-      asserMoteurs();
-      motorDriveCalc();
-      consigneVerins();
-      verinDriveCalc();
-      jerkTimer = millis();
-    }
-    if ((millis() - battTimer) > battDelay)
-    { // limitation de la fréquence de m-à-j de la charge
-      checkBatt();
-      battTimer = millis();
-    }
+
+  /**** Mise à jour des PWM ****/
+  if ((millis() - jerkTimer) > jerkTime)
+  { // limitation de la fréquence de m-à-j des PWMs
+    vitesseEncodeur();
+    asserMoteurs();
+    accelMoteurs();
+    consigneVerins();
+    accelVerin();
+    jerkTimer = millis();
     MAJ_PWM(); // M-à-j des PWMs
+  }
 
-   if(Wire.available() > 0)
-   {
-     envoieValeurs();
-     processIncomingByte();
-   }
-   else
-   {
-     if (activ_poignees == HIGH) // Lit seulement les valeurs PWM des poignées si les poignées sont activées sur l'écran.
-       ContrlPoignees();
-     else
-       closeLED();
+  /**** Vérification de l'état de la batterie ****/
+  if ((millis() - battTimer) > battDelay)
+  { // limitation de la fréquence de m-à-j de la charge
+    checkBatt();
+    battTimer = millis();
+  }
 
-     verinManuel();
-   }
+  /**** Communication avec la manette ****/
+  if (Wire.available() > 0)
+  {
+    CommManette();
+  }
+  else
+  {
+    if (activ_poignees == LOW) // Lit seulement les valeurs PWM des poignées si les poignées sont activées sur l'écran.
+      fermerLED();
+
+    verinManuel();
+  }
+
 } // fin loop
-
-void receiveEvent(int howmany)
-{
-  //rien
-}
 
 //-------------------------------------------------------------------------------------------------------------
 // DEBUT DES FONCTIONS
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 /*--- DÉPLACEMENT ---*/
-void riseBreaks()
-{ 
+void relacherFrein()
+{
   wheelstopped = 0;
   digitalWrite(bkd, HIGH);
   digitalWrite(bkg, HIGH);
 }
-void Break()
-{ 
+void Frein()
+{
   wheelstopped = 1;
   digitalWrite(bkd, LOW);
   digitalWrite(bkg, LOW);
 }
 void asserMoteurs()
 {
-  vitesseDesireeDroite = -coefVitesse*PWMD/255.0;
-  vitesseDesireeGauche = -coefVitesse*PWMG/255.0;
+  if (signal_verin == 1) // Si la manette est en communication
+  {
+    vitesseDesireeDroite = -coefVitesse * pwmD_Value / 255.0;
+    vitesseDesireeGauche = -coefVitesse * pwmG_Value / 255.0;
+  }
+  else if (activ_poignees == HIGH) // Sinon si les poignées sont activées
+  {
+    ContrlPoignees();
+  }
+  else // Sinon tout éteindre
+  {
+    vitesseDesireeDroite = 0;
+    vitesseDesireeGauche = 0;
+    PWMG = 0;
+    PWMD = 0;
+    cumErrorM_L = 0;
+    cumErrorM_R = 0;
+    return;
+  }
 
-  // À compléter pour l'algorithme de contrôle PID
-  eM = vitesseDesireeDroite- vitesseDroiteReelle;
+  // PID pour côté droit
+  eM = -vitesseDesireeDroite + vitesseDroiteReelle;
   if (abs(eM) >= eMinM)
   {
-    cumErrorM_R += eM;    // Integrale
+    if (eM > -0.49 && eM < 0.49)
+    {
+      cumErrorM_R += eM; // Integrale
+    }
+
     rateErrorM_R = (eM - lastErrorM_R); // Dérivée
     if (rateErrorM_R > rateErrorMaxM)
     {
@@ -173,19 +185,27 @@ void asserMoteurs()
       outputM = -outputMaxM;
 
     lastErrorM_R = eM; // Remember current error
-    PWMD += (int)outputM;
-    
+    PWMD += outputM;
+    if (abs(vitesseDesireeDroite) < 0.05)
+    {
+      PWMD = 0;
+    }
   }
   else
   {
     rateErrorM_R = 0;
+    outputM = 0;
   }
 
-
-  eM = vitesseDesireeGauche - vitesseGaucheReelle;
+  // PID pour côté gauche
+  eM = -vitesseDesireeGauche + vitesseGaucheReelle;
   if (abs(eM) >= eMinM)
   {
-    cumErrorM_L = eM + lastErrorM_L;    // Integrale
+    if (eM > -0.49 && eM < 0.49)
+    {
+      cumErrorM_L += eM; // Integrale
+    }
+
     rateErrorM_L = (eM - lastErrorM_L); // Dérivée
     if (rateErrorM_L > rateErrorMaxM)
     {
@@ -199,31 +219,44 @@ void asserMoteurs()
       outputM = -outputMaxM;
 
     lastErrorM_L = eM; // Remember current error
-    PWMG += (int)outputM;
-    
+    PWMG += outputM;
+    if (abs(vitesseDesireeGauche) < 0.05)
+    {
+      PWMG = 0;
+    }
   }
   else
   {
     rateErrorM_L = 0;
+    outputM = 0;
   }
 
-Serial.print("VitesseDroiteRelle: ");
-Serial.print(vitesseDroiteReelle);
-Serial.print(" VitesseDroiteDesiree: ");
-Serial.print(vitesseDesireeDroite);
-Serial.print(" VitesseGaucheRelle: ");
-Serial.print(vitesseGaucheReelle);
-Serial.print(" VitesseGaucheDesiree: ");
-Serial.println(vitesseDesireeGauche);
+  /*Serial.print("   VDR: ");
+  Serial.print(vitesseDroiteReelle);
+  Serial.print("    VDD: ");
+  Serial.print(vitesseDesireeDroite);
+  Serial.print("    PWMD: ");
+  Serial.print(PWMD);
+  Serial.print("    VGR: ");
+  Serial.print(vitesseGaucheReelle);
+  Serial.print("    VGD: ");
+  Serial.print(vitesseDesireeGauche);
+  Serial.print("    PWMG: ");
+  Serial.print(PWMG);
+  Serial.print("   outputM: ");
+  Serial.print(outputM);
+  Serial.print("    pwmD_Value: ");
+  Serial.print(pwmD_Value);
+  Serial.print("    pwmd: ");
+  Serial.println(pwmd);*/
 
-
-
-  } // Fin asserMoteurs 
-void motorDriveCalc()
+} // Fin asserMoteurs
+void accelMoteurs()
 {
-  if (activ_poignees == HIGH){
-    mode = abs(1-digitalRead(modePoignees));
-    dir = abs(1-digitalRead(sens));
+  if (activ_poignees == HIGH)
+  {
+    mode = abs(1 - digitalRead(modePoignees));
+    dir = abs(1 - digitalRead(sens));
     delay(15);
   }
   // Moteur côté controlleur  ------------------------------------------------------
@@ -237,13 +270,17 @@ void motorDriveCalc()
     PWMD_reel += diff_PWMD;
 
   // Décision logique pour la direction des roues motrices, PWMD_reel vient de la manette et dir vient des poignées.
-  if ((PWMD_reel < 0) || ((dir == HIGH) && activ_poignees ))
+  /* if ((PWMD_reel < 0) || ((dir == HIGH) && activ_poignees ))
+     digitalWrite(dmd, LOW);
+   if ((PWMD_reel > 0 && manette_en_cours) || (dir == LOW && activ_poignees && !manette_en_cours))
+     digitalWrite(dmd, HIGH);*/
+  if (PWMD_reel < 0)
     digitalWrite(dmd, LOW);
-  if ((PWMD_reel > 0 && manette_en_cours) || (dir == LOW && activ_poignees && !manette_en_cours))
+  if (PWMD_reel > 0)
     digitalWrite(dmd, HIGH);
 
   // Moteur côté batterie ------------------------------------------------------
-  // Plage d'acceleration du moteur côté batterie 
+  // Plage d'acceleration du moteur côté batterie
   diff_PWMG = (PWMG - PWMG_reel);
   if (diff_PWMG > ACCELMAX)
     PWMG_reel += ACCELMAX;
@@ -251,108 +288,57 @@ void motorDriveCalc()
     PWMG_reel += -ACCELMAX;
   else
     PWMG_reel += diff_PWMG;
-  
+
   // Décision logique pour la direction des roues motrices, PWMG_reel vient de la manette et dir vient des poignées.
-  if ((PWMG_reel < 0) || ((dir == HIGH) && activ_poignees))
+  /*if ((PWMG_reel < 0) || ((dir == HIGH) && activ_poignees))
     digitalWrite(dmg, LOW);
   if ((PWMG_reel > 0 && manette_en_cours) || (dir == LOW && activ_poignees && !manette_en_cours))
+    digitalWrite(dmg, HIGH);*/
+  if (PWMG_reel < 0)
+    digitalWrite(dmg, LOW);
+  if (PWMG_reel > 0)
     digitalWrite(dmg, HIGH);
 
-  // Frein  
-  if (!wheelstopped && !activ_poignees && !manette_en_cours)    // Actionne les freins des roues motrices si celles-ci ne sont pas déjà arrêtées et qu'il n'y a plus de commandes provenant de la manette ET des poignées.
-    Break();
-  else if (wheelstopped && (activ_poignees || manette_en_cours))    // Désactive les freins des roues motrices si les roues sont déjà arrêtées et que le Arduino reçoit des commandes provenant des poignées OU de la manette.
-    riseBreaks();
-} // fin motorDriveCalc
-void machine_stop() 
+  // Frein
+  if (!wheelstopped && !activ_poignees && !manette_en_cours) // Actionne les freins des roues motrices si celles-ci ne sont pas déjà arrêtées et qu'il n'y a plus de commandes provenant de la manette ET des poignées.
+    Frein();
+  else if (wheelstopped && (activ_poignees || manette_en_cours)) // Désactive les freins des roues motrices si les roues sont déjà arrêtées et que le Arduino reçoit des commandes provenant des poignées OU de la manette.
+    relacherFrein();
+} // fin accelMoteurs
+void machine_stop()
 {
   PWMD = 0;
   PWMG = 0;
+  PWMD_reel = 0;
+  PWMG_reel = 0;
   PWMVG = 0;
   PWMVD = 0;
 }
-void encoderSpeedCalc(){
+void vitesseEncodeur()
+{
+  tempsAcquisitionDroit = millis() - ancienTempsAcquisitionDroit;
 
-  
-      acquisitionTimeRight = millis() - lastacquisitionTimeRight;
+  vitesseDroiteReelle = (EncodeurRoueDroite.read() * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionDroit / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
+  ancienTempsAcquisitionDroit = millis();
+  EncodeurRoueDroite.readAndReset();
 
-      if(acquisitionTimeRight > 90){    //Limiter la vitesse d'acquisition pour avoir de meilleures données.
-
-      vitesseDroiteReelle = (EncoderRoueDroite.read()*6.283185*rayonRoue/(EncoderHoleQuantity*acquisitionTimeRight/1000))*M_S_TO_KM_H; //Vitesse en km/h
-      lastacquisitionTimeRight = millis();
-      EncoderRoueDroite.readAndReset();
-
-
-
-      acquisitionTimeLeft = millis() - lastacquisitionTimeLeft;
-      vitesseGaucheReelle = (EncoderRoueGauche.read()*6.283185*rayonRoue/(EncoderHoleQuantity*acquisitionTimeLeft/1000))*M_S_TO_KM_H; //Vitesse en km/h
-      lastacquisitionTimeLeft = millis();
-      EncoderRoueGauche.readAndReset();
-
-
+  tempsAcquisitionGauche = millis() - ancienTempsAcquisitionGauche;
+  vitesseGaucheReelle = (EncodeurRoueGauche.read() * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionGauche / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
+  ancienTempsAcquisitionGauche = millis();
+  EncodeurRoueGauche.readAndReset();
+  //}
+}
+void MAJ_PWM()
+{
+  if (PWMD_reel > 100 || PWMG_reel > 100 || PWMG > 100 || PWMD > 100) // Condition de sécurité
+  {
+    machine_stop();
+    Serial.println("MACHINE STOP - Vitesse trop elevee");
   }
-}
-void MAJ_PWM(){
-    analogWrite(mg, abs(PWMG_reel));
-    analogWrite(md, abs(PWMD_reel));
-    analogWrite(vg, abs(PWM_VG_reel));
-    analogWrite(vd, abs(PWM_VD_reel));
-}
-
-/*--- INTERNAL MESUREMENT UNIT ---*/
-float lectureAngle()
-{
-  imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
-  imu::Quaternion quat = bno.getQuat();
-  float w, x, y, z, coef, p[3], p_prime[3], pitch;
-
-  pitch = abs(euler.y()) * DegToRad;
-
-  w = quat.w();
-  x = quat.x();
-  y = quat.y();
-  z = quat.z();
-  coef = 2 / (w * w + x * x + y * y + z * z);
-
-  p[0] = cos(pitch);
-  p[1] = 0;
-  p[2] = sin(pitch);
-
-  p_prime[0] = p[0] + coef * (y * (w * p[2] + x * p[1] - y * p[0]) - z * (w * p[1] + z * p[0] - x * p[2]));
-  p_prime[1] = p[1] + coef * (z * (w * p[0] + y * p[2] - z * p[1]) - x * (w * p[2] + x * p[1] - y * p[0]));
-  p_prime[2] = p[2] + coef * (x * (w * p[1] + z * p[0] - x * p[2]) - y * (w * p[0] + y * p[2] - z * p[1]));
-
-  return atan2(p_prime[1], p_prime[0]);
-}
-void envoieValeurs()
-{
-  //float angle = lectureAngle()*1000;
-  // Serial.print(ID);
-  // Serial.println(angle);
-  //delay(60);
-}
-void displaySensorOffsets(const adafruit_bno055_offsets_t &calibData)
-{
-    Serial.print("Accelerometer: ");
-    Serial.print(calibData.accel_offset_x); Serial.print(" ");
-    Serial.print(calibData.accel_offset_y); Serial.print(" ");
-    Serial.print(calibData.accel_offset_z); Serial.print(" ");
-
-    Serial.print("\nGyro: ");
-    Serial.print(calibData.gyro_offset_x); Serial.print(" ");
-    Serial.print(calibData.gyro_offset_y); Serial.print(" ");
-    Serial.print(calibData.gyro_offset_z); Serial.print(" ");
-
-    Serial.print("\nMag: ");
-    Serial.print(calibData.mag_offset_x); Serial.print(" ");
-    Serial.print(calibData.mag_offset_y); Serial.print(" ");
-    Serial.print(calibData.mag_offset_z); Serial.print(" ");
-
-    Serial.print("\nAccel Radius: ");
-    Serial.print(calibData.accel_radius);
-
-    Serial.print("\nMag Radius: ");
-    Serial.print(calibData.mag_radius);
+  analogWrite(mg, abs(PWMG_reel));
+  analogWrite(md, abs(PWMD_reel));
+  analogWrite(vg, abs(PWM_VG_reel));
+  analogWrite(vd, abs(PWM_VD_reel));
 }
 
 /*--- LEVAGE ---*/
@@ -364,7 +350,7 @@ void peserPatient()
 }
 void asserVerins()
 {
-  e = encoder2Reading - encoder1Reading;
+  e = EncodeurVerinGauche.read() - EncodeurVerinDroit.read();
   if (abs(e) >= eMin)
   {
     cumError = e + lastError;    // Integrale
@@ -375,13 +361,10 @@ void asserVerins()
     }
     output = kp * e + ki * cumError + kd * rateError; // PID output
     if (output > outputMax)
-    {
       output = outputMax;
-    }
     else if (output < -outputMax)
-    {
       output = -outputMax;
-    }
+
     lastError = e; // Remember current error
     if (PWMVG || PWMVD)
     {
@@ -402,19 +385,30 @@ void asserVerins()
       rateError = 0;
     }
   }
+  Serial.print("EGR:  ");
+  Serial.print(EncodeurVerinGauche.read());
+  Serial.print("  PWVG: ");
+  Serial.print(PWMVG);
+  Serial.print("  EDR:  ");
+  Serial.print(EncodeurVerinDroit.read());
+  Serial.print("  PWMVR:  ");
+  Serial.print(PWMVD);
+  Serial.print("  Output: ");
+  Serial.println(output);
+
 } // Fin asserVerins
 void consigneVerins()
 {
-  //Asservir les vérins si la vitesse est suffisante
+  // Asservir les vérins si la vitesse est suffisante
   if ((abs(PWM_VG_reel) > 40) || (abs(PWM_VD_reel) > 40))
   {
-      asserVerins();
+    asserVerins();
   }
 
-  //Vérification des limit switch et changement du PWM en conséquence
+  // Vérification des limit switch et changement du PWM en conséquence
   if (digitalRead(LimitSwitchBG) == HIGH)
   {
-    EncoderVerinGauche.readAndReset(); // Reset de l'encodeur si la limite est atteinte
+    EncodeurVerinGauche.readAndReset(); // Reset de l'encodeur si la limite est atteinte
     if (PWMVG > 0)
     {
       PWMVG = 0;
@@ -423,33 +417,31 @@ void consigneVerins()
   }
   if (digitalRead(LimitSwitchBD) == HIGH)
   {
-    EncoderVerinDroit.readAndReset(); // Reset de l'encodeur si la limite est atteinte
+    EncodeurVerinDroit.readAndReset(); // Reset de l'encodeur si la limite est atteinte
     if (PWMVD > 0)
     {
       PWMVD = 0;
       PWM_VD_reel = 0;
     }
   }
-if (digitalRead(LimitSwitchHG) == HIGH)
-{
-  if (PWMVG < 0)
+  if (digitalRead(LimitSwitchHG) == HIGH)
   {
-    PWMVG = 0;
-    PWM_VG_reel = 0;
+    if (PWMVG < 0)
+    {
+      PWMVG = 0;
+      PWM_VG_reel = 0;
+    }
   }
-
-}
-if (digitalRead(LimitSwitchHD) == HIGH)
-{
-  if (PWMVD < 0)
+  if (digitalRead(LimitSwitchHD) == HIGH)
   {
-    PWMVD = 0;
-    PWM_VD_reel = 0;
+    if (PWMVD < 0)
+    {
+      PWMVD = 0;
+      PWM_VD_reel = 0;
+    }
   }
-
-}
 } // Fin consigneVerins
-void verinDriveCalc()
+void accelVerin()
 {
   diff_PWM_VG = (PWMVG - PWM_VG_reel) / 2;
   if (diff_PWM_VG > 10)
@@ -462,7 +454,7 @@ void verinDriveCalc()
     diff_PWM_VG = -10;
     PWM_VG_reel += diff_PWM_VG;
   }
-  else if ((abs(diff_PWM_VG) < 2) && (abs(PWMVG) < 2)) //Vérifier la nécessité de cette condition
+  else if ((abs(diff_PWM_VG) < 2) && (abs(PWMVG) < 2)) // Vérifier la nécessité de cette condition
   {
     diff_PWM_VG = 0;
     PWM_VG_reel = 0;
@@ -491,7 +483,7 @@ void verinDriveCalc()
     diff_PWM_VD = -10;
     PWM_VD_reel += diff_PWM_VD;
   }
-  else if ((abs(diff_PWM_VD) < 2) && (abs(PWMVD) < 2)) //Vérifier la nécessité de cette condition
+  else if ((abs(diff_PWM_VD) < 2) && (abs(PWMVD) < 2)) // Vérifier la nécessité de cette condition
   {
     diff_PWM_VD = 0;
     PWM_VD_reel = 0;
@@ -508,11 +500,11 @@ void verinDriveCalc()
   {
     digitalWrite(vdd, HIGH);
   }
-} // Fin verinDriveCalc
+} // Fin accelVerin
 void verinManuel()
-{ 
+{
   int btnmanuel = analogRead(updn);
-  if (btnmanuel >= (referenceBouton-100))
+  if (btnmanuel >= (referenceBouton - 100))
   {
     if (btnreleased == 0)
     {
@@ -526,30 +518,32 @@ void verinManuel()
     PWMVG = liftCoef;
     PWMVD = liftCoef;
     btnreleased = 0;
-    //Serial.println("down");
+    // Serial.println("down");
   }
   else
   {
     PWMVG = -liftCoef;
     PWMVD = -liftCoef;
     btnreleased = 0;
-   // Serial.println("up");
+    // Serial.println("up");
   }
 }
-void LoadCellCalib(){
-    //---------------------------------------- Calibration du loadCell ----------------------------------------
-    scale.set_scale(5164.67);
-    scale.tare();
-    Serial.println("Mettre poids");
-    delay(5000);
-    Serial.println("Debut mesure");
-    Serial.print("poids = ");
-    Serial.println(scale.get_units(40));
-    //--------------------------------------------------------------------------------------------------------
+void LoadCellCalib()
+{
+  //---------------------------------------- Calibration du loadCell ----------------------------------------
+  scale.set_scale(5164.67);
+  scale.tare();
+  Serial.println("Mettre poids");
+  delay(5000);
+  Serial.println("Debut mesure");
+  Serial.print("poids = ");
+  Serial.println(scale.get_units(40));
+  //--------------------------------------------------------------------------------------------------------
 }
+
 /*--- MAINTIEN ---*/
 void springCalc()
-{ 
+{
   // Combinaisons pour chaque position des fourchettes
   Rkg[0] = R925 + R928 + R929;
   Rkg[1] = 0;
@@ -620,7 +614,6 @@ void fourchetteConfig()
 }
 void lmtWait(int lap)
 {
-
   unsigned long lapStart = millis();
   while ((millis() - lapStart) < (unsigned int)lap)
   {
@@ -629,9 +622,6 @@ void lmtWait(int lap)
       Serial.println("Err. Obstruction Soudaine Fourchette");
       msgmaintien.setText("Obstruction soudaine : tenir le ceintre pendant toute la configuration");
       break;
-    }
-    else
-    {
     }
   }
 }
@@ -748,12 +738,11 @@ void checkBatt()
 } // Fin checkBatt
 
 /*--- MANETTE ---*/
-void process_data (String data) 
+void traitementDonnesManette(String data)
 {
-  signal_verin = (data.substring(0,1)).toInt();
-  signal_x = map((data.substring(1,5)).toInt(),1000,2024,255,-255);
-  signal_y = map((data.substring(5,9)).toInt(),1000,2024,255,-255);
-
+  signal_verin = (data.substring(0, 1)).toInt();
+  signal_x = map((data.substring(1, 5)).toInt(), 1000, 2024, 255, -255);
+  signal_y = map((data.substring(5, 9)).toInt(), 1000, 2024, 255, -255);
 
   pwmD_Value = -(float)(signal_x + signal_y);
   pwmG_Value = (float)(-signal_x + signal_y);
@@ -761,63 +750,73 @@ void process_data (String data)
     pwmD_Value = 255;
   else if (pwmD_Value < -255)
     pwmD_Value = -255;
+  else if (pwmD_Value < 15 && pwmD_Value > -15) // Dead zone
+    pwmD_Value = 0;
+
   if (pwmG_Value > 255)
     pwmG_Value = 255;
   else if (pwmG_Value < -255)
     pwmG_Value = -255;
+  else if (pwmG_Value < 15 && pwmG_Value > -15) // Dead zone
+    pwmG_Value = 0;
 
-  pwmD_Value = pwmD_Value / 512 * coefVitesse * jogCoef; // Scale 255 selon limite jogCoef, pour PWM
-  pwmG_Value = pwmG_Value / 512 * coefVitesse * jogCoef;
-  PWMD = int(pwmD_Value);
-  PWMG = int(pwmG_Value);
-  
-  if(signal_verin == 0) {  // FIN DE LA COMMUNICATION
+  if (abs(pwmG_Value - pwmD_Value) < 15) // Faire avancer le Zénith plus droit
+    pwmG_Value = pwmD_Value;
+
+  // PWMD = int(pwmD_Value / 255 * coefVitesse ); // Scale 255 selon limite jogCoef, pour PWM
+  // PWMG = int(pwmG_Value / 255 * coefVitesse );
+
+  if (signal_verin == 0)
+  { // FIN DE LA COMMUNICATION
     manette_en_cours = false;
     PWMD = 0;
     PWMG = 0;
     PWMVG = 0;
     PWMVD = 0;
   }
-  else if(signal_verin == 1) { // AUCUNE COMMANDE DE VERIN
+  else if (signal_verin == 1)
+  { // AUCUNE COMMANDE DE VERIN
     PWMVG = 0;
     PWMVD = 0;
   }
-  else if (signal_verin == 2) { //VERIN UP
-  PWMD = 0;
-  PWMG = 0;
-  PWMVG = -liftCoef;
-  PWMVD = -liftCoef;
-  //Serial.println("UP");
+  else if (signal_verin == 2)
+  { // VERIN UP
+    PWMD = 0;
+    PWMG = 0;
+    PWMVG = -liftCoef;
+    PWMVD = -liftCoef;
+    // Serial.println("UP");
   }
-    else if (signal_verin == 3) { //VERIN DOWN
-  PWMD = 0;
-  PWMG = 0;
-  PWMVG = liftCoef;
-  PWMVD = liftCoef;
-  //Serial.println("DOWN");
+  else if (signal_verin == 3)
+  { // VERIN DOWN
+    PWMD = 0;
+    PWMG = 0;
+    PWMVG = liftCoef;
+    PWMVD = liftCoef;
+    // Serial.println("DOWN");
   }
-}  // Fin process_data
-void processIncomingByte ()
+} // Fin traitementDonnesManette
+void CommManette()
 {
-  String IDcommande = ""; 
-  String commandeS = "" ;
+  String IDcommande = "";
+  String commandeS = "";
 
   bool IDdone = false;
 
-  while(0 < Wire.available()) // loop through all but the last
+  while (0 < Wire.available()) // loop through all but the last
   {
     char c = Wire.read(); // receive byte as a character
-    if(c == '&')
+    if (c == '&')
       IDdone = (true);
     else if (!IDdone)
-      IDcommande = IDcommande +c;
+      IDcommande = IDcommande + c;
     else
       commandeS = commandeS + c;
   }
-  if(String(IDcommande) == String(IDattendu))
-  { 
+  if (String(IDcommande) == String(IDattendu))
+  {
     manette_en_cours = true;
-    process_data(commandeS);
+    traitementDonnesManette(commandeS);
   }
   Wire.flush();
 }
@@ -827,74 +826,83 @@ int smoothing(const byte analogPin)
 {
   int array = 0;
 
-  for(int i = 0; i < 8; i++)
+  for (int i = 0; i < 8; i++)
   {
     array += analogRead(analogPin);
     delay(5);
   }
 
-  return (array/8);
+  return (array / 8);
 }
 void ContrlPoignees()
-{                       
+{
   bStat.setText("Statut: on");
   // Lecture des gachettes aux poignées (potentiomètre). Plage de conversion entre 610-350 pour gauche et 900-670 (branché à l'envers) pour s'adapter à la rotation limitée des gachettes. Finit à 100/970 (et non 0/1023)
   // pour éviter des signaux parasites si la gachette n'est pas parfaitement dépressée.
-  pwmg = map(smoothing(potg), 160, 0, 0, 255);
+  pwmg = map(smoothing(potg), 160, 32, 0, 255);
   if (pwmg < 50) // Si la valeur du potentiomètre sort de la plage
     pwmg = 0;
   else if (pwmg > 255)
     pwmg = 255;
 
-  pwmd = map(smoothing(potd), 135, 320, 0, 255);
-   if (pwmd < 50) // Si la valeur du potentiomètre sort de la plage
+  pwmd = map(smoothing(potd), 135, 300, 0, 255);
+  if (pwmd < 50) // Si la valeur du potentiomètre sort de la plage
     pwmd = 0;
   else if (pwmd > 255)
     pwmd = 255;
+
+  if (abs(pwmg - pwmd) < 15) // Faire avancer le Zénith plus droit
+    pwmg = pwmd;
+
+  if (dir == LOW)
+  {
+    pwmg = -pwmg;
+    pwmd = -pwmd;
+  }
 
   // Mode d'avance du Zenith: roues solidaires (HIGH) ou indépendantes (LOW)
   if (mode == HIGH)
   {
     digitalWrite(ledBleue, HIGH);
-    digitalWrite(ledVerte, LOW); 
+    digitalWrite(ledVerte, LOW);
 
     if (nmode == 1)
-    {       // Algo selon le numéro de mode de contrôle
-        PWMG = int ((pwmg*coefVitesse)/16);
-        PWMD = int ((pwmd*coefVitesse)/16);
+    { // Algo selon le numéro de mode de contrôle
+
+      vitesseDesireeGauche = ((float)pwmg / 255.0 * coefVitesse);
+      vitesseDesireeDroite = ((float)pwmd / 255.0 * coefVitesse);
     }
     else if (nmode == 2)
     {
-      if (dir==HIGH)
+      if (dir == HIGH)
       {
-       PWMG = int ((pwmd*coefVitesse)/16);
-       PWMD = int ((pwmg*coefVitesse)/16);
+        vitesseDesireeGauche = ((float)pwmd / 255.0 * coefVitesse);
+        vitesseDesireeDroite = ((float)pwmg / 255.0 * coefVitesse);
       }
       else
       {
-       PWMG = int ((pwmg*coefVitesse)/16);
-       PWMD = int ((pwmd*coefVitesse)/16);
+        vitesseDesireeGauche = ((float)pwmg / 255.0 * coefVitesse);
+        vitesseDesireeDroite = ((float)pwmd / 255.0 * coefVitesse);
       }
     }
     else if (nmode == 3)
     {
-       PWMG = int ((pwmd*coefVitesse)/16);
-       PWMD = int ((pwmg*coefVitesse)/16);
+      vitesseDesireeGauche = ((float)pwmd / 255.0 * coefVitesse);
+      vitesseDesireeDroite = ((float)pwmg / 255.0 * coefVitesse);
     }
     else if (nmode == 4)
     {
-      if (dir==HIGH)
+      if (dir == HIGH)
       {
-       PWMG = int ((pwmg*coefVitesse)/16);
-       PWMD = int ((pwmd*coefVitesse)/16);
+        vitesseDesireeGauche = ((float)pwmg / 255.0 * coefVitesse);
+        vitesseDesireeDroite = ((float)pwmd / 255.0 * coefVitesse);
       }
       else
       {
-       PWMG = int ((pwmd*coefVitesse)/16);
-       PWMD = int ((pwmg*coefVitesse)/16);
+        vitesseDesireeGauche = ((float)pwmd / 255.0 * coefVitesse);
+        vitesseDesireeDroite = ((float)pwmg / 255.0 * coefVitesse);
       }
     }
-    
   }
   else if (mode == LOW)
   {
@@ -903,11 +911,11 @@ void ContrlPoignees()
 
     pwm_min = min(pwmg, pwmd); // Mode solidaire contrôle les deux roues à la même vitesse selon la gâchette la moins pressée.
                                // Adapté pour les patients hémiplégiques (moitié gauche/droite du corps avec moins de contrôle moteur et/ou force).
-    PWMG = int((pwm_min * coefVitesse) / 16);
-    PWMD = int((pwm_min * coefVitesse) / 16);
+    vitesseDesireeGauche = ((float)pwm_min / 255.0 * coefVitesse);
+    vitesseDesireeDroite = ((float)pwm_min / 255.0 * coefVitesse);
   }
 
-  if(dir == HIGH)
+  if (dir == HIGH)
   {
     digitalWrite(ledRouge, LOW);
     digitalWrite(ledJaune, HIGH);
@@ -915,10 +923,10 @@ void ContrlPoignees()
   else
   {
     digitalWrite(ledRouge, HIGH);
-    digitalWrite(ledJaune, LOW); 
+    digitalWrite(ledJaune, LOW);
   }
 }
-void closeLED()
+void fermerLED()
 {
   digitalWrite(ledBleue, LOW);
   digitalWrite(ledRouge, LOW);
@@ -939,18 +947,18 @@ void checkpage()
   }
   else
   {
-      chr[0] = {0};
-      memset(chr, 0, 3);
-      nopageDebut.getText(chr, 3);
-      nPagelue = atoi(chr);
-      if (nPagelue == 1)
-      {
-        npage = 1;
-      }
-      else
-      {
-        Serial.println("Erreur checkpage");
-      }
+    chr[0] = {0};
+    memset(chr, 0, 3);
+    nopageDebut.getText(chr, 3);
+    nPagelue = atoi(chr);
+    if (nPagelue == 1)
+    {
+      npage = 1;
+    }
+    else
+    {
+      Serial.println("Erreur checkpage");
+    }
   }
 } // Fin checkpage
 void nextPopCallback(void *ptr)
@@ -982,13 +990,12 @@ void majMaintienPopCallback(void *ptr)
     msgmaintien.setText("Freins releves !");
   }
 }
-void majVitessePopCallback(void*ptr)
+void majVitessePopCallback(void *ptr)
 {
   Vitesse.getValue(&speedcoef);
-  coefVitesse = speedcoef;
-  coefVitesse /= 4.25;  // Facteur arbitraire ajouté pour limiter la vitesse du Zénith, qui était dangereux à vitesse max
+  coefVitesse = (float)speedcoef / 10.0;
 
-  msgvitesse.setText("La vitesse a ete mise a jour"); 
+  msgvitesse.setText("La vitesse a ete mise a jour");
 }
 void okPopCallback(void *ptr)
 {
@@ -1048,25 +1055,25 @@ void bOffPopCallback(void *ptr)
 }
 void bMode1PopCallback(void *ptr)
 {
- nmode = 1;
- MODE.setText("1");
- activ_poignees = HIGH;
+  nmode = 1;
+  MODE.setText("1");
+  activ_poignees = HIGH;
 }
 void bMode2PopCallback(void *ptr)
 {
- nmode = 2;
- MODE.setText("2");
- activ_poignees = HIGH;
+  nmode = 2;
+  MODE.setText("2");
+  activ_poignees = HIGH;
 }
 void bMode3PopCallback(void *ptr)
 {
- nmode = 3;
- MODE.setText("3");
- activ_poignees = HIGH;
+  nmode = 3;
+  MODE.setText("3");
+  activ_poignees = HIGH;
 }
 void bMode4PopCallback(void *ptr)
 {
- nmode = 4;
- MODE.setText("4");
- activ_poignees = HIGH;
+  nmode = 4;
+  MODE.setText("4");
+  activ_poignees = HIGH;
 }
