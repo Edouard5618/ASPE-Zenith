@@ -15,6 +15,7 @@ void setup()
   Serial2.begin(115200);
   SPI.begin();
   Wire.begin(4);
+  Wire.onReceive(receiveEvent);
 
   // //EEPROM
   poidsOffset = 0; // EEPROM.read(eepromPoidsOffsetAddr) - 128; // Lecture EEPROM
@@ -89,6 +90,13 @@ void setup()
 } // fin setup
 void loop()
 {
+  /*
+  Serial.print("Pin 2: ");
+  Serial.print(digitalRead(2));
+  Serial.print("  Pin 13: ");
+  Serial.println(digitalRead(13));*/
+
+
   nexLoop(nex_listen_list); // Écoute les items Nextion
 
   /**** Mise à jour des PWM ****/
@@ -335,6 +343,25 @@ void MAJ_PWM()
     machine_stop();
     Serial.println("MACHINE STOP - Vitesse trop elevee");
   }
+/*
+  Serial.print("VitesseD: ");
+  Serial.print(vitesseDesireeDroite);
+
+  Serial.print("   vitesseDroiteReelle: ");
+  Serial.print(vitesseDroiteReelle);
+
+  Serial.print("   PWMD: ");
+  Serial.print(PWMD);
+
+  Serial.print("   VitesseG: ");
+  Serial.print(vitesseDesireeGauche);
+
+  Serial.print("   vitesseGaucheReelle: ");
+  Serial.print(vitesseGaucheReelle);
+
+  Serial.print("   PWMG: ");
+  Serial.println(PWMG);*/
+
   analogWrite(mg, abs(PWMG_reel));
   analogWrite(md, abs(PWMD_reel));
   analogWrite(vg, abs(PWM_VG_reel));
@@ -385,6 +412,7 @@ void asserVerins()
       rateError = 0;
     }
   }
+  
   Serial.print("EGR:  ");
   Serial.print(EncodeurVerinGauche.read());
   Serial.print("  PWVG: ");
@@ -819,6 +847,11 @@ void CommManette()
     traitementDonnesManette(commandeS);
   }
   Wire.flush();
+}
+void receiveEvent(int howMany)
+{
+  //**** NE PAS SUPPRIMER LA FONCTION  ****//
+  // Necessaire pour la communication I2C
 }
 
 /*--- POIGNÉES ---*/

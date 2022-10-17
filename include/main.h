@@ -20,19 +20,19 @@
 
 /*------------------------------------------------------------------ PINS -----------------------------------------------------------------*/
 /*--- ENCODEURS DE POSITION DES VÉRINS ---*/
-const byte EncodeurVerinGauche_A = 18;
-const byte EncodeurVerinGauche_B = 15;
-const byte EncodeurVerinDroit_A = 19;
-const byte EncodeurVerinDroit_B = 14;
+const byte EncodeurVerinGauche_A = 2;
+const byte EncodeurVerinGauche_B = 53;
+const byte EncodeurVerinDroit_A = 3;
+const byte EncodeurVerinDroit_B = 4;
 
 /*--- ENCODEURS AUX ROUES ---*/
-const byte EncodeurRoueDroite_A = A2; // 18;
-const byte EncodeurRoueDroite_B = A2; // 15;
-const byte EncodeurRoueGauche_A = A2; // 19;
-const byte EncodeurRoueGauche_B = A2; // 14;
+const byte EncodeurRoueDroite_A = 18;
+const byte EncodeurRoueDroite_B = 14;
+const byte EncodeurRoueGauche_A = 15;
+const byte EncodeurRoueGauche_B = 19;
 
 /*--- Déplacement ---*/
-const byte mg = 3;   // Moteur côté batterie
+const byte mg = 7;   // Moteur côté batterie 
 const byte md = 10;  // Moteur côté contrôleur
 const byte dmg = 33; // Direction pour Moteur côté batterie
 const byte dmd = 9;  // Direction pour Moteur côté contrôleur
@@ -45,12 +45,10 @@ const byte vg = 5;               // Vérin côté batterie
 const byte vd = 6;               // Vérin côté contrôleur
 const byte vdg = 43;             // Direction Vérin côté batterie
 const byte vdd = 46;             // Direction Vérin côté contrôleur
-const byte slaveSelectEnc1 = 44; // Pin Slave du quad encoder counter 1
-const byte slaveSelectEnc2 = 42; // Pin Slave du quad encoder counter 2
 const byte dat = 24;             // Pin data du load cell amp
 const byte clk = 22;             // Pin clock du load cell amp
-const byte LimitSwitchBD = 29;   // Limit switch bas côté controller
-const byte LimitSwitchHD = 31;   // Limit switch haut côté controller
+const byte LimitSwitchBD = 23;   // Limit switch bas côté controller
+const byte LimitSwitchHD = 25;   // Limit switch haut côté controller
 const byte LimitSwitchBG = 40;   // Limit switch bas côté batterie
 const byte LimitSwitchHG = 41;   // Limit switch haut côté batterie
 
@@ -66,8 +64,8 @@ const byte bat = A1; // Pin pour lire la capacité de la batterie
 /*--- Poignées ---*/
 const byte potg = A11;       // Potentiomètre de la gachette de la poignée côté batterie pour contrôler la vitesse des roues motrices côté batterie
 const byte potd = A12;       // Potentiomètre de la gachette de la poignée côté contrôleur pour contrôler la vitesse des roues motrices côté contrôleur
-const byte modePoignees = 7; // Switch pour décider le mode d'avance du Zenith à partir des gachettes (roues motrices indépendantes ou solidaires)
-const byte sens = 2;         // Bouton pour alterner entre la marche avant ou arrière des roues motrices
+const byte modePoignees = 48; // Switch pour décider le mode d'avance du Zenith à partir des gachettes (roues motrices indépendantes ou solidaires)
+const byte sens = 44;         // Bouton pour alterner entre la marche avant ou arrière des roues motrices
 const byte ledRouge = 34;    // LED qui indique que le Zénith se déplace vers l'arrière
 const byte ledJaune = 32;    // LED qui indique que le Zénith se déplace vers l'avant
 const byte ledBleue = 28;    // LED qui indique que les poignées sont en mode indépendantes
@@ -312,7 +310,8 @@ void checkBatt(); // Vérification du niveau de la batterie
 
 /*--- MANETTE ---*/
 void traitementDonnesManette(String data); // Génère les PWMs des moteurs selon les inputs de la manette
-void CommManette();                        // Fonction appelée dans le Loop pour les moteurs
+void CommManette();                        // Fonction appelée dans le Loop pour communiquer avec les moteurs
+void receiveEvent(int howMany);            // Fonction appelée lorsqu'une donnée est reçue par le bus I2C
 
 /*--- POIGNÉES ---*/
 int smoothing(const byte analogPin); // Fonction qui fait la moyenne de plusieurs mesures pour plus de précision
