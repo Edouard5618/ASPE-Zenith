@@ -20,16 +20,17 @@
 
 /*------------------------------------------------------------------ PINS -----------------------------------------------------------------*/
 /*--- ENCODEURS DE POSITION DES VÉRINS ---*/
-const byte EncodeurVerinGauche_A = 2;
-const byte EncodeurVerinGauche_B = 53;
-const byte EncodeurVerinDroit_A = 3;
-const byte EncodeurVerinDroit_B = 4;
+const byte EVGA = 2;
+const byte EVGB = 53;
+const byte EVDA = 3;
+const byte EVDB = 4;
 
 /*--- ENCODEURS AUX ROUES ---*/
-const byte EncodeurRoueDroite_A = 18;
-const byte EncodeurRoueDroite_B = 14;
-const byte EncodeurRoueGauche_A = 15;
-const byte EncodeurRoueGauche_B = 19;
+const byte ERGB = 15;
+const byte ERGA = 19;
+const byte ERDA = 18;
+const byte ERDB = 14;
+
 
 /*--- Déplacement ---*/
 const byte mg = 7;   // Moteur côté batterie 
@@ -47,10 +48,12 @@ const byte vdg = 43;             // Direction Vérin côté batterie
 const byte vdd = 46;             // Direction Vérin côté contrôleur
 const byte dat = 24;             // Pin data du load cell amp
 const byte clk = 22;             // Pin clock du load cell amp
-const byte LimitSwitchBD = 23;   // Limit switch bas côté controller
-const byte LimitSwitchHD = 25;   // Limit switch haut côté controller
-const byte LimitSwitchBG = 40;   // Limit switch bas côté batterie
-const byte LimitSwitchHG = 41;   // Limit switch haut côté batterie
+const byte LMTHG = 41;   // Limit switch haut côté batterie
+const byte LMTBG = 40;   // Limit switch bas côté batterie
+const byte LMTHD = 25;   // Limit switch haut côté controller
+const byte LMTBD = 23;   // Limit switch bas côté controller
+
+
 
 /*--- Maintien ---*/
 const byte fg = 11;  // Fourchette côté batterie
@@ -62,26 +65,26 @@ const byte lmt = 47; // Limit switch pour position angulaire de l'arbre principa
 const byte bat = A1; // Pin pour lire la capacité de la batterie
 
 /*--- Poignées ---*/
-const byte potg = A11;       // Potentiomètre de la gachette de la poignée côté batterie pour contrôler la vitesse des roues motrices côté batterie
-const byte potd = A12;       // Potentiomètre de la gachette de la poignée côté contrôleur pour contrôler la vitesse des roues motrices côté contrôleur
-const byte modePoignees = 48; // Switch pour décider le mode d'avance du Zenith à partir des gachettes (roues motrices indépendantes ou solidaires)
-const byte sens = 44;         // Bouton pour alterner entre la marche avant ou arrière des roues motrices
-const byte ledRouge = 34;    // LED qui indique que le Zénith se déplace vers l'arrière
-const byte ledJaune = 32;    // LED qui indique que le Zénith se déplace vers l'avant
-const byte ledBleue = 28;    // LED qui indique que les poignées sont en mode indépendantes
-const byte ledVerte = 30;    // LED qui indique que les poignées sont en mode solidaires
+const byte potg = A11;   // Potentiomètre de la gachette de la poignée côté batterie pour contrôler la vitesse des roues motrices côté batterie
+const byte potd = A12;   // Potentiomètre de la gachette de la poignée côté contrôleur pour contrôler la vitesse des roues motrices côté contrôleur
+const byte Mode = 48;    // Switch pour décider le mode d'avance du Zenith à partir des gachettes (roues motrices indépendantes ou solidaires)
+const byte sens = 44;    // Bouton pour alterner entre la marche avant ou arrière des roues motrices
+const byte LEDR = 34;    // LED rouge qui indique que le Zénith se déplace vers l'arrière
+const byte LEDJ = 32;    // LED jaune qui indique que le Zénith se déplace vers l'avant
+const byte LEDB = 28;    // LED bleue qui indique que les poignées sont en mode indépendantes
+const byte LEDV = 30;    // LED verte qui indique que les poignées sont en mode solidaires
 
 /*---------------------------------------------------------- Variables et objets ----------------------------------------------------------*/
 /*--- ENCODEURS DE POSITION DES VÉRINS ---*/
-Encoder EncodeurVerinGauche(EncodeurVerinGauche_A, EncodeurVerinGauche_B);
-Encoder EncodeurVerinDroit(EncodeurVerinDroit_A, EncodeurVerinDroit_B);
+Encoder EncodeurVerinGauche(EVGA, EVGB);
+Encoder EncodeurVerinDroit(EVDA, EVDB);
 
 /*--- ENCODEURS AUX ROUES ---*/
 #define phaseEncodeurRoue 2400 // Nombre de pulse par tour
 #define M_S_TO_KM_H 3.6        // Vitesse mètre par seconde en kilomètres par heure
 #define rayonRoue 0.1778       // En mètre
-Encoder EncodeurRoueGauche(EncodeurRoueGauche_A, EncodeurRoueGauche_B);
-Encoder EncodeurRoueDroite(EncodeurRoueDroite_A, EncodeurRoueDroite_B);
+Encoder EncodeurRoueGauche(ERGA, ERGB);
+Encoder EncodeurRoueDroite(ERDA, ERDB);
 float vitesseDroiteReelle = 0;  // Vitesse mesurée par l'encodeur
 float vitesseGaucheReelle = 0;  // Vitesse mesurée par l'encodeur
 float vitesseDesireeDroite = 0; // Vitesse désirée par la manette ou les poignées
@@ -90,6 +93,10 @@ unsigned long tempsAcquisitionDroit = 0;
 unsigned long ancienTempsAcquisitionDroit = 0;
 unsigned long tempsAcquisitionGauche = 0;
 unsigned long ancienTempsAcquisitionGauche = 0;
+int32_t ancienPulseDroit = 0; 
+int32_t ancienPulseGauche = 0;
+int32_t pulseParcouruDroit = 0;
+int32_t pulseParcouruGauche = 0;
 
 /*--- EEPROM ---*/
 int eepromPoidsOffsetAddr = 0;
@@ -97,7 +104,7 @@ int eepromPoidsOffsetAddr = 0;
 /*--- DÉPLACEMENT ---*/
 #define jogCoef 27                  // Multiple de speedcoef
 #define ACCELMAX 6                  // Acceleration ou déceleration maximale
-#define jerkTime 50                 // Délai entre chaque variation du PWM pour limiter le jerk
+#define jerkTime 70                 // Délai entre chaque variation du PWM pour limiter le jerk
 uint32_t speedcoef = 0;             // Vitesse de déplacement, variant entre 0 et 10 (valeur par défaut)
 float coefVitesse = 0;              // Coefficient de vitesse, variant entre 0 et 10 (valeur par défaut)
 int JogX;                           // Axe X issue du joystick de la manette
@@ -126,13 +133,13 @@ int lmtTrigg = 0;        // Nombre de détection de fin de course consécutives 
 int referenceBouton = 0; // Valeur de référence
 
 /*Asservissement PID Verin*/
-#define eMin 1              // Erreur minimale tenue en compte (dead zone)
+#define eMin 50              // Erreur minimale tenue en compte (dead zone)
 #define rateErrorMax 10     // Valeur maxi de dérivée du PID
-#define outputMax 60        // Valeur maxi de output (anti windup)
+#define outputMax 30        // Valeur maxi de output (anti windup)
 #define kMax 5              // Valeur maxi des boutons scroll d'ajustement des coefficient du PID, sur écran
-#define kp 1.0              // Coefficient proportionnel
+#define kp 0.10              // Coefficient proportionnel
 #define ki 0.0              // Coefficient intégral
-#define kd 3.0              // Coefficient dérivée
+#define kd 0.0              // Coefficient dérivée
 int e = 0;                  // Erreur asservissement vérin (écart entre les compteurs effet Hall gauche vs droit)
 double lastError;           // Buffer pour calcul de la dérivée
 double cumError, rateError; // Intégrale et dérivée du PID
@@ -190,11 +197,14 @@ unsigned long battTimer = millis(); // Timer pour limiter la vitesse de rafraich
 unsigned long battDelay = 0;        // Délai entre mesure de la charge, 0 pour remplir vite le array, devient 1000 après
 
 /*--- Manette ---*/
+#define TempsSansCommMax 150
 int signal_verin;
 int signal_x;
 int signal_y;
 int signal_Joystick;
 bool manette_en_cours = 0; // La manette est en train de communiquer avec le contrôleur
+unsigned int DerniereComm = 0;
+
 
 /*--- Signal BLE manette ---*/
 char Data[100];   // Char buffer pour enregistrer la communication en AT commande
@@ -208,7 +218,7 @@ String IDattendu = "2B1C";
 int pwmg = 0;             // Signal PWM brut provenant de la lecture analogique de la gachette côté batterie
 int pwmd = 0;             // Signal PWM brut provenant de la lecture analogique de la gachette côté contrôleur
 int pwm_min = 0;          // Signal PWM brut des deux gachettes si le mode Solidaire est sélectionné
-int dir;                  // Variable qui definit si les roues motrices vont vers l'avant (HIGH) ou l'arriere (LOW)
+bool dir;                  // Variable qui definit si les roues motrices vont vers l'avant (HIGH) ou l'arriere (LOW)
 int mode;                 // Condition pour choisir le mode d'avance du Zenith -- HIGH = indépendantes et LOW = solidaires
 int activ_poignees = LOW; // Condition pour activer les poignees avec l'ecran
 int nmode = 1;            // Test pour le mode de contrôle des poignées
@@ -312,6 +322,7 @@ void checkBatt(); // Vérification du niveau de la batterie
 void traitementDonnesManette(String data); // Génère les PWMs des moteurs selon les inputs de la manette
 void CommManette();                        // Fonction appelée dans le Loop pour communiquer avec les moteurs
 void receiveEvent(int howMany);            // Fonction appelée lorsqu'une donnée est reçue par le bus I2C
+void SecuriteManette();
 
 /*--- POIGNÉES ---*/
 int smoothing(const byte analogPin); // Fonction qui fait la moyenne de plusieurs mesures pour plus de précision

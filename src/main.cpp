@@ -38,20 +38,20 @@ void setup()
   pinMode(dmg, OUTPUT);
   pinMode(mag, OUTPUT);
   pinMode(updn, INPUT);
-  pinMode(LimitSwitchBD, INPUT_PULLUP);
-  pinMode(LimitSwitchBG, INPUT_PULLUP);
-  pinMode(LimitSwitchHD, INPUT_PULLUP);
-  pinMode(LimitSwitchHG, INPUT_PULLUP);
+  pinMode(LMTBD, INPUT_PULLUP);
+  pinMode(LMTBG, INPUT_PULLUP);
+  pinMode(LMTHD, INPUT_PULLUP);
+  pinMode(LMTHG, INPUT_PULLUP);
   pinMode(lmt, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(sens, INPUT_PULLUP);
-  pinMode(modePoignees, INPUT_PULLUP);
+  pinMode(Mode, INPUT_PULLUP);
   pinMode(potd, INPUT_PULLUP);
   pinMode(potg, INPUT_PULLUP);
-  pinMode(ledBleue, OUTPUT);
-  pinMode(ledJaune, OUTPUT);
-  pinMode(ledRouge, OUTPUT);
-  pinMode(ledVerte, OUTPUT);
+  pinMode(LEDB, OUTPUT);
+  pinMode(LEDJ, OUTPUT);
+  pinMode(LEDR, OUTPUT);
+  pinMode(LEDV, OUTPUT);
 
   // // Établit la liste des items Nextion à surveiller (items qui peuvent être appuyés) pour l'écran
   majMaintien.attachPop(majMaintienPopCallback, &majMaintien);
@@ -90,11 +90,11 @@ void setup()
 } // fin setup
 void loop()
 {
-  /*
-  Serial.print("Pin 2: ");
-  Serial.print(digitalRead(2));
-  Serial.print("  Pin 13: ");
-  Serial.println(digitalRead(13));*/
+  
+  Serial.print("available: ");
+  Serial.print(Wire.available());
+  Serial.print("  signal_verin: ");
+  Serial.println(signal_verin);
 
 
   nexLoop(nex_listen_list); // Écoute les items Nextion
@@ -118,6 +118,8 @@ void loop()
     battTimer = millis();
   }
 
+  
+
   /**** Communication avec la manette ****/
   if (Wire.available() > 0)
   {
@@ -131,6 +133,7 @@ void loop()
     verinManuel();
   }
 
+  SecuriteManette();
 } // fin loop
 
 //-------------------------------------------------------------------------------------------------------------
@@ -263,7 +266,7 @@ void accelMoteurs()
 {
   if (activ_poignees == HIGH)
   {
-    mode = abs(1 - digitalRead(modePoignees));
+    mode = abs(1 - digitalRead(Mode));
     dir = abs(1 - digitalRead(sens));
     delay(15);
   }
@@ -278,10 +281,6 @@ void accelMoteurs()
     PWMD_reel += diff_PWMD;
 
   // Décision logique pour la direction des roues motrices, PWMD_reel vient de la manette et dir vient des poignées.
-  /* if ((PWMD_reel < 0) || ((dir == HIGH) && activ_poignees ))
-     digitalWrite(dmd, LOW);
-   if ((PWMD_reel > 0 && manette_en_cours) || (dir == LOW && activ_poignees && !manette_en_cours))
-     digitalWrite(dmd, HIGH);*/
   if (PWMD_reel < 0)
     digitalWrite(dmd, LOW);
   if (PWMD_reel > 0)
@@ -298,10 +297,6 @@ void accelMoteurs()
     PWMG_reel += diff_PWMG;
 
   // Décision logique pour la direction des roues motrices, PWMG_reel vient de la manette et dir vient des poignées.
-  /*if ((PWMG_reel < 0) || ((dir == HIGH) && activ_poignees))
-    digitalWrite(dmg, LOW);
-  if ((PWMG_reel > 0 && manette_en_cours) || (dir == LOW && activ_poignees && !manette_en_cours))
-    digitalWrite(dmg, HIGH);*/
   if (PWMG_reel < 0)
     digitalWrite(dmg, LOW);
   if (PWMG_reel > 0)
@@ -325,20 +320,40 @@ void machine_stop()
 void vitesseEncodeur()
 {
   tempsAcquisitionDroit = millis() - ancienTempsAcquisitionDroit;
-
-  vitesseDroiteReelle = (EncodeurRoueDroite.read() * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionDroit / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
   ancienTempsAcquisitionDroit = millis();
-  EncodeurRoueDroite.readAndReset();
+
+  pulseParcouruDroit = EncodeurRoueDroite.read() - ancienPulseDroit;
+  ancienPulseDroit = EncodeurRoueDroite.read();
+
+  vitesseDroiteReelle = (pulseParcouruDroit * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionDroit / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
+
+
+  /*Serial.print("pulseParcouruDroit");
+  Serial.print(pulseParcouruDroit);
+  Serial.print("    tempsDroit");
+  Serial.print(tempsAcquisitionDroit);
+  Serial.print("    VDR");
+  Serial.print(vitesseDroiteReelle);*/
+  
 
   tempsAcquisitionGauche = millis() - ancienTempsAcquisitionGauche;
-  vitesseGaucheReelle = (EncodeurRoueGauche.read() * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionGauche / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
   ancienTempsAcquisitionGauche = millis();
-  EncodeurRoueGauche.readAndReset();
-  //}
+
+  pulseParcouruGauche = -EncodeurRoueGauche.read() - ancienPulseGauche;
+  ancienPulseGauche = -EncodeurRoueGauche.read();
+
+  vitesseGaucheReelle = (pulseParcouruGauche * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionGauche / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
+  
+  /*Serial.print("    pulseParcouruGauche");
+  Serial.print(pulseParcouruGauche);
+  Serial.print("    tempsGauche");
+  Serial.print(tempsAcquisitionGauche);
+  Serial.print("    VGR");
+  Serial.println(vitesseGaucheReelle);*/
 }
 void MAJ_PWM()
 {
-  if (PWMD_reel > 100 || PWMG_reel > 100 || PWMG > 100 || PWMD > 100) // Condition de sécurité
+  if (abs(PWMD_reel) > 100 || abs(PWMG_reel) > 100 || abs(PWMG) > 100 || abs(PWMD) > 100) // Condition de sécurité
   {
     machine_stop();
     Serial.println("MACHINE STOP - Vitesse trop elevee");
@@ -377,7 +392,7 @@ void peserPatient()
 }
 void asserVerins()
 {
-  e = EncodeurVerinGauche.read() - EncodeurVerinDroit.read();
+  e = -EncodeurVerinGauche.read() + EncodeurVerinDroit.read();
   if (abs(e) >= eMin)
   {
     cumError = e + lastError;    // Integrale
@@ -434,7 +449,7 @@ void consigneVerins()
   }
 
   // Vérification des limit switch et changement du PWM en conséquence
-  if (digitalRead(LimitSwitchBG) == HIGH)
+  if (digitalRead(LMTBG) == HIGH)
   {
     EncodeurVerinGauche.readAndReset(); // Reset de l'encodeur si la limite est atteinte
     if (PWMVG > 0)
@@ -443,7 +458,7 @@ void consigneVerins()
       PWM_VG_reel = 0;
     }
   }
-  if (digitalRead(LimitSwitchBD) == HIGH)
+  if (digitalRead(LMTBD) == HIGH)
   {
     EncodeurVerinDroit.readAndReset(); // Reset de l'encodeur si la limite est atteinte
     if (PWMVD > 0)
@@ -452,7 +467,7 @@ void consigneVerins()
       PWM_VD_reel = 0;
     }
   }
-  if (digitalRead(LimitSwitchHG) == HIGH)
+  if (digitalRead(LMTHG) == HIGH)
   {
     if (PWMVG < 0)
     {
@@ -460,7 +475,7 @@ void consigneVerins()
       PWM_VG_reel = 0;
     }
   }
-  if (digitalRead(LimitSwitchHD) == HIGH)
+  if (digitalRead(LMTHD) == HIGH)
   {
     if (PWMVD < 0)
     {
@@ -768,6 +783,8 @@ void checkBatt()
 /*--- MANETTE ---*/
 void traitementDonnesManette(String data)
 {
+  DerniereComm = millis();
+
   signal_verin = (data.substring(0, 1)).toInt();
   signal_x = map((data.substring(1, 5)).toInt(), 1000, 2024, 255, -255);
   signal_y = map((data.substring(5, 9)).toInt(), 1000, 2024, 255, -255);
@@ -790,9 +807,6 @@ void traitementDonnesManette(String data)
 
   if (abs(pwmG_Value - pwmD_Value) < 15) // Faire avancer le Zénith plus droit
     pwmG_Value = pwmD_Value;
-
-  // PWMD = int(pwmD_Value / 255 * coefVitesse ); // Scale 255 selon limite jogCoef, pour PWM
-  // PWMG = int(pwmG_Value / 255 * coefVitesse );
 
   if (signal_verin == 0)
   { // FIN DE LA COMMUNICATION
@@ -853,6 +867,18 @@ void receiveEvent(int howMany)
   //**** NE PAS SUPPRIMER LA FONCTION  ****//
   // Necessaire pour la communication I2C
 }
+void SecuriteManette()
+{
+  if( millis() - DerniereComm > TempsSansCommMax && signal_verin != 0)
+  {
+    while (true)
+    {
+    machine_stop();
+    Serial.println("PERTE DE COMMUNICATION AVEC LA MANETTE");
+    }
+    
+  }
+}
 
 /*--- POIGNÉES ---*/
 int smoothing(const byte analogPin)
@@ -896,8 +922,8 @@ void ContrlPoignees()
   // Mode d'avance du Zenith: roues solidaires (HIGH) ou indépendantes (LOW)
   if (mode == HIGH)
   {
-    digitalWrite(ledBleue, HIGH);
-    digitalWrite(ledVerte, LOW);
+    digitalWrite(LEDB, HIGH);
+    digitalWrite(LEDV, LOW);
 
     if (nmode == 1)
     { // Algo selon le numéro de mode de contrôle
@@ -939,8 +965,8 @@ void ContrlPoignees()
   }
   else if (mode == LOW)
   {
-    digitalWrite(ledBleue, LOW);
-    digitalWrite(ledVerte, HIGH);
+    digitalWrite(LEDB, LOW);
+    digitalWrite(LEDV, HIGH);
 
     pwm_min = min(pwmg, pwmd); // Mode solidaire contrôle les deux roues à la même vitesse selon la gâchette la moins pressée.
                                // Adapté pour les patients hémiplégiques (moitié gauche/droite du corps avec moins de contrôle moteur et/ou force).
@@ -950,21 +976,21 @@ void ContrlPoignees()
 
   if (dir == HIGH)
   {
-    digitalWrite(ledRouge, LOW);
-    digitalWrite(ledJaune, HIGH);
+    digitalWrite(LEDR, LOW);
+    digitalWrite(LEDJ, HIGH);
   }
   else
   {
-    digitalWrite(ledRouge, HIGH);
-    digitalWrite(ledJaune, LOW);
+    digitalWrite(LEDR, HIGH);
+    digitalWrite(LEDJ, LOW);
   }
 }
 void fermerLED()
 {
-  digitalWrite(ledBleue, LOW);
-  digitalWrite(ledRouge, LOW);
-  digitalWrite(ledVerte, LOW);
-  digitalWrite(ledJaune, LOW);
+  digitalWrite(LEDB, LOW);
+  digitalWrite(LEDR, LOW);
+  digitalWrite(LEDV, LOW);
+  digitalWrite(LEDJ, LOW);
 }
 
 /*--- ÉCRAN ---*/
