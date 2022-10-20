@@ -103,9 +103,9 @@ int eepromPoidsOffsetAddr = 0;
 
 /*--- DÉPLACEMENT ---*/
 #define jogCoef 27                  // Multiple de speedcoef
-#define ACCELMAX 6                  // Acceleration ou déceleration maximale
+#define ACCELMAX 10                  // Acceleration ou déceleration maximale
 #define jerkTime 70                 // Délai entre chaque variation du PWM pour limiter le jerk
-#define CorrectionJog 0.815959505   // Valeur appliquée au moteur droit pour que le Zénith avance droit
+#define CorrectionJog 0.90          // Valeur appliquée au moteur droit pour que le Zénith avance droit
 uint32_t speedcoef = 0;             // Vitesse de déplacement, variant entre 0 et 10 (valeur par défaut)
 float coefVitesse = 0;              // Coefficient de vitesse, variant entre 0 et 10 (valeur par défaut)
 int JogX;                           // Axe X issue du joystick de la manette
@@ -124,6 +124,7 @@ bool wheelstopped = 1;              // Appareil immobilisé ?
 
 /*--- LEVAGE ---*/
 #define liftCoef 255     // Vitesse de levage maximale, sur 255
+#define ACCELMAXVERIN 35 // Acceleration ou déceleration maximale des vérins
 int PWMVG = 0;           // PWM Vérin côté batterie
 int PWMVD = 0;           // PWM Vérin côté contrôleur
 int PWM_VG_reel = 0;     // PWM réellement envoyé au Vérin côté batterie
@@ -152,7 +153,7 @@ double output;              // Écart appliqué entre les PWMs des vérins gauch
 #define rateErrorMaxM 10           // Valeur maxi de dérivée du PID
 #define kpM 1.9                    // Coefficient proportionnel
 #define kiM 0.0                    // Coefficient intégral
-#define kdM 5.0                    // Coefficient dérivée
+#define kdM 1.0                    // Coefficient dérivée
 #define outputMaxM 6               // Valeur maxi de output (anti windup)
 float eM = 0;                      // Erreur asservissement vérin (écart entre les compteurs effet Hall gauche vs droit)
 double lastErrorM_R, lastErrorM_L; // Buffer pour calcul de la dérivée
