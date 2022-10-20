@@ -90,13 +90,6 @@ void setup()
 } // fin setup
 void loop()
 {
-  
-  Serial.print("available: ");
-  Serial.print(Wire.available());
-  Serial.print("  signal_verin: ");
-  Serial.println(signal_verin);
-
-
   nexLoop(nex_listen_list); // Écoute les items Nextion
 
   /**** Mise à jour des PWM ****/
@@ -118,22 +111,11 @@ void loop()
     battTimer = millis();
   }
 
-  
-
-  /**** Communication avec la manette ****/
-  if (Wire.available() > 0)
-  {
-    CommManette();
-  }
-  else
-  {
-    if (activ_poignees == LOW) // Lit seulement les valeurs PWM des poignées si les poignées sont activées sur l'écran.
-      fermerLED();
-
-    verinManuel();
-  }
-
-  SecuriteManette();
+  fermerLED();        // Fermer les LED si les poignées ne sont pas activées sur l'écran.
+  CommManette();      // Vérifier si la manette est en communication  
+  verinManuel();      // Vérifier le signal du bouton manuel du vérin
+  checkMsg();         // Enlever les messages superflus à l'écran après 10s d'apparition
+  SecuriteManette();  // MachineStop si la manette se déconnecte pendant une communication
 } // fin loop
 
 //-------------------------------------------------------------------------------------------------------------
@@ -196,7 +178,7 @@ void asserMoteurs()
       outputM = -outputMaxM;
 
     lastErrorM_R = eM; // Remember current error
-    PWMD += outputM;
+    PWMD += outputM * CorrectionJog;
     if (abs(vitesseDesireeDroite) < 0.05)
     {
       PWMD = 0;
@@ -241,8 +223,8 @@ void asserMoteurs()
     rateErrorM_L = 0;
     outputM = 0;
   }
-
-  /*Serial.print("   VDR: ");
+/*
+  Serial.print("   VDR: ");
   Serial.print(vitesseDroiteReelle);
   Serial.print("    VDD: ");
   Serial.print(vitesseDesireeDroite);
@@ -259,7 +241,8 @@ void asserMoteurs()
   Serial.print("    pwmD_Value: ");
   Serial.print(pwmD_Value);
   Serial.print("    pwmd: ");
-  Serial.println(pwmd);*/
+  Serial.println(pwmd);
+*/
 
 } // Fin asserMoteurs
 void accelMoteurs()
@@ -316,6 +299,9 @@ void machine_stop()
   PWMG_reel = 0;
   PWMVG = 0;
   PWMVD = 0;
+  PWM_VG_reel = 0;
+  PWM_VD_reel = 0;
+  MAJ_PWM();
 }
 void vitesseEncodeur()
 {
@@ -353,29 +339,29 @@ void vitesseEncodeur()
 }
 void MAJ_PWM()
 {
-  if (abs(PWMD_reel) > 100 || abs(PWMG_reel) > 100 || abs(PWMG) > 100 || abs(PWMD) > 100) // Condition de sécurité
+  /*if (abs(PWMD_reel) > 100 || abs(PWMG_reel) > 100 || abs(PWMG) > 100 || abs(PWMD) > 100) // Condition de sécurité
   {
     machine_stop();
     Serial.println("MACHINE STOP - Vitesse trop elevee");
-  }
-/*
-  Serial.print("VitesseD: ");
+  }*/
+
+
   Serial.print(vitesseDesireeDroite);
 
-  Serial.print("   vitesseDroiteReelle: ");
+  Serial.print(", ");
   Serial.print(vitesseDroiteReelle);
 
-  Serial.print("   PWMD: ");
+  Serial.print(", ");
   Serial.print(PWMD);
 
-  Serial.print("   VitesseG: ");
+  Serial.print(", ");
   Serial.print(vitesseDesireeGauche);
 
-  Serial.print("   vitesseGaucheReelle: ");
+  Serial.print(", ");
   Serial.print(vitesseGaucheReelle);
 
-  Serial.print("   PWMG: ");
-  Serial.println(PWMG);*/
+  Serial.print(", ");
+  Serial.println(PWMG);
 
   analogWrite(mg, abs(PWMG_reel));
   analogWrite(md, abs(PWMD_reel));
@@ -721,6 +707,11 @@ void setFourchette()
     msgmaintien.setText("Obstruction : soulever le ceintre et essayer de nouveau");
   }
   digitalWrite(mag, LOW);
+
+  timerMsgMaintien = millis();
+  boolMsgMaintien = true;
+  msgmaintien.setText("Calibration terminee");
+
 } // Fin setFourchette
 
 /*--- BATTERIE ---*/
@@ -840,27 +831,30 @@ void traitementDonnesManette(String data)
 } // Fin traitementDonnesManette
 void CommManette()
 {
-  String IDcommande = "";
-  String commandeS = "";
-
-  bool IDdone = false;
-
-  while (0 < Wire.available()) // loop through all but the last
+  if (Wire.available() > 0)
   {
-    char c = Wire.read(); // receive byte as a character
-    if (c == '&')
-      IDdone = (true);
-    else if (!IDdone)
-      IDcommande = IDcommande + c;
-    else
-      commandeS = commandeS + c;
+    String IDcommande = "";
+    String commandeS = "";
+
+    bool IDdone = false;
+
+    while (0 < Wire.available()) // loop through all but the last
+    {
+      char c = Wire.read(); // receive byte as a character
+      if (c == '&')
+        IDdone = (true);
+      else if (!IDdone)
+        IDcommande = IDcommande + c;
+      else
+        commandeS = commandeS + c;
+    }
+    if (String(IDcommande) == String(IDattendu))
+    {
+      manette_en_cours = true;
+      traitementDonnesManette(commandeS);
+    }
+    Wire.flush();
   }
-  if (String(IDcommande) == String(IDattendu))
-  {
-    manette_en_cours = true;
-    traitementDonnesManette(commandeS);
-  }
-  Wire.flush();
 }
 void receiveEvent(int howMany)
 {
@@ -869,14 +863,22 @@ void receiveEvent(int howMany)
 }
 void SecuriteManette()
 {
+
   if( millis() - DerniereComm > TempsSansCommMax && signal_verin != 0)
   {
-    while (true)
+    while (millis() - DerniereComm > TempsSansCommMax && signal_verin != 0)
     {
     machine_stop();
-    Serial.println("PERTE DE COMMUNICATION AVEC LA MANETTE");
+    CommManette();
+
+    Serial.println("    PERTE DE COMMUNICATION AVEC LA MANETTE");
+
+    msgErreur.setText("Erreur: ");
+    msgDisManette.setText("Manette deconnectee");
+    delay(50);
     }
-    
+    msgErreur.setText(" ");
+    msgDisManette.setText(" ");
   }
 }
 
@@ -919,7 +921,7 @@ void ContrlPoignees()
     pwmd = -pwmd;
   }
 
-  // Mode d'avance du Zenith: roues solidaires (HIGH) ou indépendantes (LOW)
+  // Mode d'avance du Zenith: roues solidaires (LOW) ou indépendantes (HIGH)
   if (mode == HIGH)
   {
     digitalWrite(LEDB, HIGH);
@@ -965,10 +967,15 @@ void ContrlPoignees()
   }
   else if (mode == LOW)
   {
+    
     digitalWrite(LEDB, LOW);
     digitalWrite(LEDV, HIGH);
 
-    pwm_min = min(pwmg, pwmd); // Mode solidaire contrôle les deux roues à la même vitesse selon la gâchette la moins pressée.
+    if (dir == HIGH)
+      pwm_min = min(pwmg, pwmd); // Mode solidaire contrôle les deux roues à la même vitesse selon la gâchette la moins pressée.
+    else 
+      pwm_min = max(pwmg, pwmd); // Mode solidaire contrôle les deux roues à la même vitesse selon la gâchette la moins pressée.
+     
                                // Adapté pour les patients hémiplégiques (moitié gauche/droite du corps avec moins de contrôle moteur et/ou force).
     vitesseDesireeGauche = ((float)pwm_min / 255.0 * coefVitesse);
     vitesseDesireeDroite = ((float)pwm_min / 255.0 * coefVitesse);
@@ -987,13 +994,30 @@ void ContrlPoignees()
 }
 void fermerLED()
 {
+  if (activ_poignees == LOW) // Lit seulement les valeurs PWM des poignées si les poignées sont activées sur l'écran.
+  {
   digitalWrite(LEDB, LOW);
   digitalWrite(LEDR, LOW);
   digitalWrite(LEDV, LOW);
   digitalWrite(LEDJ, LOW);
+  }
 }
 
 /*--- ÉCRAN ---*/
+void checkMsg()
+{
+  if (millis() - timerMsgMaintien > TempsMaxMaintien && boolMsgMaintien)
+    {
+      msgmaintien.setText(" ");
+      boolMsgMaintien = false;
+    }
+
+  if (millis() - timerMsgVitesse > TempsMaxVitesse && boolMsgVitesse)
+    {
+      msgvitesse.setText(" ");
+      boolMsgVitesse = false;
+    }
+}
 void checkpage()
 {
   chr[0] = {0};
@@ -1052,8 +1076,10 @@ void majMaintienPopCallback(void *ptr)
 void majVitessePopCallback(void *ptr)
 {
   Vitesse.getValue(&speedcoef);
-  coefVitesse = (float)speedcoef / 10.0;
+  coefVitesse = (float)speedcoef / 100.0;
 
+  timerMsgVitesse = millis();
+  boolMsgVitesse = true;
   msgvitesse.setText("La vitesse a ete mise a jour");
 }
 void okPopCallback(void *ptr)

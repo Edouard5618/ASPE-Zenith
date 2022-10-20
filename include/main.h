@@ -105,6 +105,7 @@ int eepromPoidsOffsetAddr = 0;
 #define jogCoef 27                  // Multiple de speedcoef
 #define ACCELMAX 6                  // Acceleration ou déceleration maximale
 #define jerkTime 70                 // Délai entre chaque variation du PWM pour limiter le jerk
+#define CorrectionJog 0.815959505   // Valeur appliquée au moteur droit pour que le Zénith avance droit
 uint32_t speedcoef = 0;             // Vitesse de déplacement, variant entre 0 et 10 (valeur par défaut)
 float coefVitesse = 0;              // Coefficient de vitesse, variant entre 0 et 10 (valeur par défaut)
 int JogX;                           // Axe X issue du joystick de la manette
@@ -119,6 +120,7 @@ int diff_PWMG = 0;                  // Coefficient de variation du PWM pour limi
 int diff_PWMD = 0;                  // Coefficient de variation du PWM pour limiter le jerk du côté contrôleur
 unsigned long jerkTimer = millis(); // Timer entre chaque variation des PWM
 bool wheelstopped = 1;              // Appareil immobilisé ?
+
 
 /*--- LEVAGE ---*/
 #define liftCoef 255     // Vitesse de levage maximale, sur 255
@@ -197,13 +199,13 @@ unsigned long battTimer = millis(); // Timer pour limiter la vitesse de rafraich
 unsigned long battDelay = 0;        // Délai entre mesure de la charge, 0 pour remplir vite le array, devient 1000 après
 
 /*--- Manette ---*/
-#define TempsSansCommMax 150
+#define TempsSansCommMax 500
 int signal_verin;
 int signal_x;
 int signal_y;
 int signal_Joystick;
 bool manette_en_cours = 0; // La manette est en train de communiquer avec le contrôleur
-unsigned int DerniereComm = 0;
+unsigned long DerniereComm = 0;
 
 
 /*--- Signal BLE manette ---*/
@@ -227,6 +229,12 @@ int nmode = 1;            // Test pour le mode de contrôle des poignées
 char chr[4] = {0}; // Char buffer pour communication avec l'écran
 byte npage = 1;    // Numéro de la page active pour l'écran
 int nPagelue = 0;  // Numéro de page lu depuis l'écran
+unsigned long timerMsgMaintien;
+unsigned long timerMsgVitesse;
+bool boolMsgMaintien;
+bool boolMsgVitesse;
+#define TempsMaxMaintien 10000
+#define TempsMaxVitesse 10000
 
 // déclaration des objets Nextion (page_id, component_id, "component_name")
 // Page 0 (Calibration)
@@ -251,7 +259,10 @@ NexText poidspercu = NexText(0, 26, "poidspercu");             // Texte qui indi
 NexVariable Vitesse = NexVariable(0, 46, "Vitesse");           // Variable qui indique la vitesse de déplacement du Zénith
 NexButton majVitesse = NexButton(0, 38, "majVitesse");         // Bouton de mise à jour de la vitesse du Zénith
 NexButton msgvitesse = NexButton(0, 49, "msgvitesse");         // Texte pour valider que la vitesse a été mise à jour
+NexButton msgErreur = NexButton(0,50,"msgErreur");
+NexButton msgDisManette = NexButton(0,51,"msgDisManette");             
 NexButton msgbatterie = NexButton(0, 13, "msgbatterie");       // Message d'erreur pour la batterie
+
 NexProgressBar BatteryLevel = NexProgressBar(0, 11, "blevel"); // Barre de progression qui affiche le niveau de la batterie
 
 // Page 2 (Clavier numérique)
@@ -284,6 +295,8 @@ NexTouch *nex_listen_list[] = {
     &Vitesse,
     &majVitesse,
     &msgvitesse,
+    &msgErreur,
+    &msgDisManette,
     &bMode1,
     &bMode2,
     &bMode3,
@@ -330,6 +343,7 @@ void ContrlPoignees();               // Fonction qui définit PWMD et PWMG selon
 void fermerLED();                    // Fermer toutes les LED
 
 /*--- ÉCRAN ---*/
+void checkMsg();
 void checkpage();
 void nextPopCallback(void *ptr);
 void prevPopCallback(void *ptr);
