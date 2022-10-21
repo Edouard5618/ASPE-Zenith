@@ -32,8 +32,8 @@ void setup()
   pinMode(bkg, OUTPUT);
   pinMode(vg, OUTPUT);
   pinMode(vd, OUTPUT);
-  pinMode(vdd, OUTPUT);
-  pinMode(vdg, OUTPUT);
+  pinMode(dvd, OUTPUT);
+  pinMode(dvg, OUTPUT);
   pinMode(dmd, OUTPUT);
   pinMode(dmg, OUTPUT);
   pinMode(mag, OUTPUT);
@@ -100,8 +100,9 @@ void loop()
     accelMoteurs();
     consigneVerins();
     accelVerin();
-    jerkTimer = millis();
-    MAJ_PWM(); // M-à-j des PWMs
+    CommManette();            // Vérifier si la manette est en communication  
+    MAJ_PWM();                // M-à-j des PWMs
+    jerkTimer = millis();     // Reset du timer
   }
 
   /**** Vérification de l'état de la batterie ****/
@@ -112,7 +113,6 @@ void loop()
   }
 
   fermerLED();        // Fermer les LED si les poignées ne sont pas activées sur l'écran.
-  CommManette();      // Vérifier si la manette est en communication  
   verinManuel();      // Vérifier le signal du bouton manuel du vérin
   checkMsg();         // Enlever les messages superflus à l'écran après 10s d'apparition
   SecuriteManette();  // MachineStop si la manette se déconnecte pendant une communication
@@ -183,6 +183,14 @@ void asserMoteurs()
     {
       PWMD = 0;
     }
+    if (vitesseDesireeDroite > 0.1 && PWMD > -10 && PWMD < 0) //Améliorer l'acceleration à basse vitesse
+    {
+      PWMD = -10;
+    }
+    else if (vitesseDesireeDroite < -0.1 && PWMD < 10 && PWMD > 0)
+    {
+      PWMD = 10;
+    }
   }
   else
   {
@@ -216,6 +224,14 @@ void asserMoteurs()
     if (abs(vitesseDesireeGauche) < 0.05)
     {
       PWMG = 0;
+    }
+    if (vitesseDesireeGauche > 0.1 && PWMG > -10 && PWMG < 0) //Améliorer l'acceleration à basse vitesse
+    {
+      PWMG = -10;
+    }
+    else if (vitesseDesireeGauche < -0.1 && PWMG < 10 && PWMG > 0)
+    {
+      PWMG = 10;
     }
   }
   else
@@ -345,38 +361,30 @@ void MAJ_PWM()
     Serial.println("MACHINE STOP - Vitesse trop elevee");
   }
 
-
+  Serial.print("VDD: ");
   Serial.print(vitesseDesireeDroite);
 
-  Serial.print(", ");
+  Serial.print("    VDR: ");
   Serial.print(vitesseDroiteReelle);
 
-  Serial.print(", ");
+  Serial.print("    PWMD: ");
   Serial.print(PWMD);
 
-  Serial.print(", ");
+  Serial.print("    PWMD_reel: ");
+  Serial.print(PWMD_reel);
+
+  Serial.print("    VDG: ");
   Serial.print(vitesseDesireeGauche);
 
-  Serial.print(", ");
+  Serial.print("    VGR");
   Serial.print(vitesseGaucheReelle);
 
-  Serial.print(", ");
+  Serial.print("    PWMG: ");
   Serial.print(PWMG);
+
+  Serial.print("    PWMG_reel: ");
+  Serial.println(PWMG_reel);
   
-  Serial.print(", ");
-  Serial.print(vitesseDesireeGauche - vitesseGaucheReelle);
-
-  Serial.print(", ");
-  Serial.print(vitesseDesireeDroite - vitesseDroiteReelle);
-  
-  Serial.print(", ");
-  Serial.print(EncodeurRoueDroite.read());
-  
-  Serial.print(", ");
-  Serial.println(EncodeurRoueGauche.read());
-
-
-
   analogWrite(mg, abs(PWMG_reel));
   analogWrite(md, abs(PWMD_reel));
   analogWrite(vg, abs(PWM_VG_reel));
@@ -495,9 +503,9 @@ void accelVerin()
     PWM_VG_reel += diff_PWM_VG;
 
   if (PWM_VG_reel < 0)
-    digitalWrite(vdg, LOW);
+    digitalWrite(dvg, LOW);
   else
-    digitalWrite(vdg, HIGH);
+    digitalWrite(dvg, HIGH);
 
   diff_PWM_VD = (PWMVD - PWM_VD_reel);
   if (diff_PWM_VD > ACCELMAXVERIN)
@@ -508,9 +516,9 @@ void accelVerin()
     PWM_VD_reel += diff_PWM_VD;
 
   if (PWM_VD_reel < 0)
-    digitalWrite(vdd, LOW);
+    digitalWrite(dvd, LOW);
   else
-    digitalWrite(vdd, HIGH);
+    digitalWrite(dvd, HIGH);
 } // Fin accelVerin
 void verinManuel()
 {
@@ -878,7 +886,7 @@ int smoothing(const byte analogPin)
   for (int i = 0; i < 8; i++)
   {
     array += analogRead(analogPin);
-    delay(5);
+    //delay(5);
   }
 
   return (array / 8);

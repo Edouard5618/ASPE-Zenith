@@ -26,8 +26,8 @@ const byte EVDA = 3;
 const byte EVDB = 4;
 
 /*--- ENCODEURS AUX ROUES ---*/
-const byte ERGB = 15;
 const byte ERGA = 19;
+const byte ERGB = 15;
 const byte ERDA = 18;
 const byte ERDB = 14;
 
@@ -44,8 +44,8 @@ const byte bkd = 8;  // Frein électromagnétique du moteur côté contrôleur
 const byte updn = A0;            // Interrupteur monter-descendre pour contrôle manuel du levage
 const byte vg = 5;               // Vérin côté batterie
 const byte vd = 6;               // Vérin côté contrôleur
-const byte vdg = 43;             // Direction Vérin côté batterie
-const byte vdd = 46;             // Direction Vérin côté contrôleur
+const byte dvg = 43;             // Direction Vérin côté batterie
+const byte dvd = 46;             // Direction Vérin côté contrôleur
 const byte dat = 24;             // Pin data du load cell amp
 const byte clk = 22;             // Pin clock du load cell amp
 const byte LMTHG = 41;   // Limit switch haut côté batterie
@@ -103,8 +103,8 @@ int eepromPoidsOffsetAddr = 0;
 
 /*--- DÉPLACEMENT ---*/
 #define jogCoef 27                  // Multiple de speedcoef
-#define ACCELMAX 10                  // Acceleration ou déceleration maximale
-#define jerkTime 70                 // Délai entre chaque variation du PWM pour limiter le jerk
+#define ACCELMAX 5                  // Acceleration ou déceleration maximale
+#define jerkTime 55                 // Délai entre chaque variation du PWM pour limiter le jerk
 #define CorrectionJog 0.90          // Valeur appliquée au moteur droit pour que le Zénith avance droit
 uint32_t speedcoef = 0;             // Vitesse de déplacement, variant entre 0 et 10 (valeur par défaut)
 float coefVitesse = 0;              // Coefficient de vitesse, variant entre 0 et 10 (valeur par défaut)
