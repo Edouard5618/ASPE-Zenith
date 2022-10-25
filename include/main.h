@@ -100,10 +100,18 @@ int32_t pulseParcouruGauche = 0;
 
 /*--- EEPROM ---*/
 int eepromPoidsOffsetAddr = 0;
+int eepromCorrSecuriteVitesseAddr = 1;
+int eepromCorrDeviationAddr = 2;
+int eepromCorrAccelerationAddr = 3;
+
 
 /*--- DÉPLACEMENT ---*/
-#define jogCoef 27                  // Multiple de speedcoef
-#define ACCELMAX 5                  // Acceleration ou déceleration maximale
+uint32_t CorrSecuriteVitesse = 100;        // Correction de sécurité de vitesse
+uint32_t CorrDeviation = 100;              // Correction de déviation
+uint32_t CorrAcceleration = 100;           // Correction d'acceleration
+float PWM_MAX = 0;                  // PWM maximum pour les moteurs
+float PWM_MAX_AJUST = 1;            // PWM maximum ajusté pour les moteurs
+float ACCELMAX = 5;                  // Acceleration ou déceleration maximale
 #define jerkTime 55                 // Délai entre chaque variation du PWM pour limiter le jerk
 #define CorrectionJog 0.90          // Valeur appliquée au moteur droit pour que le Zénith avance droit
 uint32_t speedcoef = 0;             // Vitesse de déplacement, variant entre 0 et 10 (valeur par défaut)
@@ -122,6 +130,7 @@ unsigned long jerkTimer = millis(); // Timer entre chaque variation des PWM
 bool wheelstopped = 1;              // Appareil immobilisé ?
 
 
+
 /*--- LEVAGE ---*/
 #define liftCoef 255     // Vitesse de levage maximale, sur 255
 #define ACCELMAXVERIN 35 // Acceleration ou déceleration maximale des vérins
@@ -136,7 +145,7 @@ int lmtTrigg = 0;        // Nombre de détection de fin de course consécutives 
 int referenceBouton = 0; // Valeur de référence
 
 /*Asservissement PID Verin*/
-#define eMin 50              // Erreur minimale tenue en compte (dead zone)
+#define eMin 25              // Erreur minimale tenue en compte (dead zone)
 #define rateErrorMax 10     // Valeur maxi de dérivée du PID
 #define outputMax 30        // Valeur maxi de output (anti windup)
 #define kMax 5              // Valeur maxi des boutons scroll d'ajustement des coefficient du PID, sur écran
@@ -208,14 +217,9 @@ int signal_Joystick;
 bool manette_en_cours = 0; // La manette est en train de communiquer avec le contrôleur
 unsigned long DerniereComm = 0;
 
-
 /*--- Signal BLE manette ---*/
+#define IDattendu "2B1C"    // ID de la manette
 char Data[100];   // Char buffer pour enregistrer la communication en AT commande
-char RAW[3];      // Char array pour lecture de la valeur du signal BLE
-int INDEX;        // Curseur pour array RAW
-char Value = '-'; // Symbol à détecter dans l'array Data signifiant le début de la valeur du signal BLE
-String ID = "1A0B&";
-String IDattendu = "2B1C";
 
 /*--- POIGNÉES ---*/
 int pwmg = 0;             // Signal PWM brut provenant de la lecture analogique de la gachette côté batterie
@@ -232,10 +236,15 @@ byte npage = 1;    // Numéro de la page active pour l'écran
 int nPagelue = 0;  // Numéro de page lu depuis l'écran
 unsigned long timerMsgMaintien;
 unsigned long timerMsgVitesse;
+unsigned long timerMsgPoids;
 bool boolMsgMaintien;
 bool boolMsgVitesse;
-#define TempsMaxMaintien 10000
-#define TempsMaxVitesse 10000
+bool boolMsgPoids;
+bool PremierChangementP2 = true;
+bool PremierChangementP3 = true;
+#define TempsMaxMsgMaintien 10000
+#define TempsMaxMsgVitesse 10000
+#define TempsMaxMsgPoids 10000
 
 // déclaration des objets Nextion (page_id, component_id, "component_name")
 // Page 0 (Calibration)
@@ -245,26 +254,26 @@ bool boolMsgVitesse;
 // NexText tStatut = NexText(0, 3, "tStatut");                         // Texte qui affiche le statut de calibration (en cours ou terminée)
 
 // Page 1 (Interface)
-NexText nopageDebut = NexText(0, 16, "nopage");                // Texte invisible qui indique le numéro de page
-NexButton next = NexButton(0, 48, "next");                     // Bouton pour aller à la page secondaire (modes)
-NexButton bOn = NexButton(0, 22, "bOn");                       // Bouton on pour activer les poignées
-NexButton bOff = NexButton(0, 23, "bOff");                     // Bouton off pour désactiver les poignées
-NexText bStat = NexText(0, 24, "bStat");                       // Texte qui affiche si les poignées sont activées ou non
-NexText poidspatient = NexText(0, 8, "poidspatient");          // Texte qui affiche le poids du patient
-NexButton msgpoids = NexButton(0, 15, "msgpoids");             // Message d'erreur sur le poids
-NexButton balance = NexButton(0, 14, "balance");               // Bouton pour la pesée automatique par la load cell
-NexVariable PoucMaintien = NexVariable(0, 35, "PoucMaintien"); // Variable qui indique le pourcentage de maintien désiré
-NexButton majMaintien = NexButton(0, 30, "majMaintien");       // Bouton de mise à jour des ressorts de maintien
-NexButton msgmaintien = NexButton(0, 12, "msgmaintien");       // Message d'erreur pour les fourchettes des ressorts
-NexText poidspercu = NexText(0, 26, "poidspercu");             // Texte qui indique le poids perçu par le patient
-NexVariable Vitesse = NexVariable(0, 46, "Vitesse");           // Variable qui indique la vitesse de déplacement du Zénith
-NexButton majVitesse = NexButton(0, 38, "majVitesse");         // Bouton de mise à jour de la vitesse du Zénith
-NexButton msgvitesse = NexButton(0, 49, "msgvitesse");         // Texte pour valider que la vitesse a été mise à jour
-NexButton msgErreur = NexButton(0,50,"msgErreur");
-NexButton msgDisManette = NexButton(0,51,"msgDisManette");             
-NexButton msgbatterie = NexButton(0, 13, "msgbatterie");       // Message d'erreur pour la batterie
+NexText nopageDebut = NexText(0, 12, "nopage");                // Texte invisible qui indique le numéro de page
+NexButton next = NexButton(0, 43, "next");                     // Bouton pour aller à la page secondaire (modes)
+NexButton bOn = NexButton(0, 17, "bOn");                       // Bouton on pour activer les poignées
+NexButton bOff = NexButton(0, 18, "bOff");                     // Bouton off pour désactiver les poignées
+NexText bStat = NexText(0, 19, "bStat");                       // Texte qui affiche si les poignées sont activées ou non
+NexText poidspatient = NexText(0, 4, "poidspatient");          // Texte qui affiche le poids du patient
+NexButton msgpoids = NexButton(0, 11, "msgpoids");             // Message d'erreur sur le poids
+NexButton balance = NexButton(0, 10, "balance");               // Bouton pour la pesée automatique par la load cell
+NexVariable PoucMaintien = NexVariable(0, 30, "PoucMaintien"); // Variable qui indique le pourcentage de maintien désiré
+NexButton majMaintien = NexButton(0, 25, "majMaintien");       // Bouton de mise à jour des ressorts de maintien
+NexButton msgmaintien = NexButton(0, 8, "msgmaintien");       // Message d'erreur pour les fourchettes des ressorts
+NexText poidspercu = NexText(0, 21, "poidspercu");             // Texte qui indique le poids perçu par le patient
+NexVariable Vitesse = NexVariable(0, 41, "Vitesse");           // Variable qui indique la vitesse de déplacement du Zénith
+NexButton majVitesse = NexButton(0, 33, "majVitesse");         // Bouton de mise à jour de la vitesse du Zénith
+NexButton msgvitesse = NexButton(0, 44, "msgvitesse");         // Texte pour valider que la vitesse a été mise à jour
+NexButton msgErreur = NexButton(0,45,"msgErreur");
+NexButton msgDisManette = NexButton(0,46,"msgDisManette");             
+NexButton msgbatterie = NexButton(0, 9, "msgbatterie");       // Message d'erreur pour la batterie
 
-NexProgressBar BatteryLevel = NexProgressBar(0, 11, "blevel"); // Barre de progression qui affiche le niveau de la batterie
+NexProgressBar BatteryLevel = NexProgressBar(0, 7, "blevel"); // Barre de progression qui affiche le niveau de la batterie
 
 // Page 2 (Clavier numérique)
 NexButton ok = NexButton(1, 4, "ok"); // Bouton pour envoyer le poids inscrit manuellement
@@ -272,11 +281,27 @@ NexButton ok = NexButton(1, 4, "ok"); // Bouton pour envoyer le poids inscrit ma
 // Page 3 (Modes de déplacement (controle direct ou inverse des moteurs)
 NexText nopageModes = NexText(2, 13, "nopage"); // Texte invisible qui indique le numéro de page
 NexButton prev = NexButton(2, 15, "prev");      // Bouton pour aller à la page principale
+NexButton next2 = NexButton(2, 16, "next2");                   // Bouton pour aller à la page secondaire (Réglages)
 NexButton bMode1 = NexButton(2, 5, "bMode1");   // Bouton pour activer le mode 1 de contrôle des poignées
 NexButton bMode2 = NexButton(2, 6, "bMode2");   // Bouton pour activer le mode 3 de contrôle des poignées
 NexButton bMode3 = NexButton(2, 7, "bMode3");   // Bouton pour activer le mode 3 de contrôle des poignées
 NexButton bMode4 = NexButton(2, 8, "bMode4");   // Bouton pour activer le mode 4 de contrôle des poignées
 NexText MODE = NexText(2, 4, "MODE");           // Texte qui affiche le mode actuel de contrôle des poignées
+
+// Page 4 (Réglages avancés)
+NexText nopageAvance = NexText(3, 25, "nopageAvance"); // Texte invisible qui indique le numéro de page
+NexButton prev2 = NexButton(3, 16, "prev2");      // Bouton pour aller à la page principale
+NexSlider SliderVit = NexSlider(3, 5, "SliderVit"); // Slider pour régler la vitesse du Zénith
+NexSlider SliderDev = NexSlider(3, 7, "SliderDev"); // Slider pour régler la déviation du Zénith
+NexSlider SliderAcc = NexSlider(3, 6, "SliderAcc"); // Slider pour régler l'acceleration du Zénith
+NexVariable Vit = NexVariable(3, 26, "Vit"); // Variable qui indique la vitesse de déplacement du Zénith
+NexVariable Dev = NexVariable(3, 28, "Dev"); // Variable qui indique la déviation de déplacement du Zénith
+NexVariable Acc = NexVariable(3, 27, "Acc"); // Variable qui indique l'acceleration de déplacement du Zénith
+NexNumber ValVit = NexNumber(3, 12, "ValVit"); // Texte qui indique la vitesse de déplacement du Zénith
+NexNumber ValDev = NexNumber(3, 13, "ValDev"); // Texte qui indique la déviation de déplacement du Zénith
+NexNumber ValAcc = NexNumber(3, 14, "ValAcc"); // Texte qui indique l'acceleration de déplacement du Zénith
+
+
 
 // Array des objets Nextion à surveiller
 NexTouch *nex_listen_list[] = {
@@ -291,6 +316,7 @@ NexTouch *nex_listen_list[] = {
     &msgbatterie,
     &balance,
     &next,
+    &next2,
     &poidspercu,
     &PoucMaintien,
     &Vitesse,
@@ -302,6 +328,11 @@ NexTouch *nex_listen_list[] = {
     &bMode2,
     &bMode3,
     &bMode4,
+    &prev,
+    &prev2,
+    &SliderVit,
+    &SliderDev,
+    &SliderAcc,
     NULL};
 
 /*-------------------------------------------------------- Prototypes de Fonctions --------------------------------------------------------*/
@@ -339,7 +370,6 @@ void receiveEvent(int howMany);            // Fonction appelée lorsqu'une donn�
 void SecuriteManette();
 
 /*--- POIGNÉES ---*/
-int smoothing(const byte analogPin); // Fonction qui fait la moyenne de plusieurs mesures pour plus de précision
 void ContrlPoignees();               // Fonction qui définit PWMD et PWMG selon les commandes des poignées
 void fermerLED();                    // Fermer toutes les LED
 
@@ -347,7 +377,9 @@ void fermerLED();                    // Fermer toutes les LED
 void checkMsg();
 void checkpage();
 void nextPopCallback(void *ptr);
+void next2PopCallback(void *ptr);
 void prevPopCallback(void *ptr);
+void prev2PopCallback(void *ptr);
 void majMaintienPopCallback(void *ptr);
 void majVitessePopCallback(void *ptr);
 void okPopCallback(void *ptr);
@@ -358,3 +390,6 @@ void bMode1PopCallback(void *ptr);
 void bMode2PopCallback(void *ptr);
 void bMode3PopCallback(void *ptr);
 void bMode4PopCallback(void *ptr);
+void SliderVitPopCallback(void *ptr);
+void SliderDevPopCallback(void *ptr);
+void SliderAccPopCallback(void *ptr);

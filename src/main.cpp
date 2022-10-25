@@ -19,6 +19,9 @@ void setup()
 
   // //EEPROM
   poidsOffset = 0; // EEPROM.read(eepromPoidsOffsetAddr) - 128; // Lecture EEPROM
+  CorrSecuriteVitesse = EEPROM.read(eepromCorrSecuriteVitesseAddr); // Lecture EEPROM
+  CorrDeviation = EEPROM.read(eepromCorrDeviationAddr); // Lecture EEPROM
+  CorrAcceleration = EEPROM.read(eepromCorrAccelerationAddr); // Lecture EEPROM
 
   // // Augmentation de la frequence PWM pour les moteurs et les verins
   TCCR2B = (TCCR2B & 0b11111000) | 0x01;
@@ -59,16 +62,21 @@ void setup()
   ok.attachPop(okPopCallback, &ok);
   balance.attachPop(balancePopCallback, &balance);
   next.attachPop(nextPopCallback);
+  next2.attachPop(next2PopCallback);
   prev.attachPop(prevPopCallback);
+  prev2.attachPop(prev2PopCallback);
   bOn.attachPop(bOnPopCallback, &bOn);
   bOff.attachPop(bOffPopCallback, &bOff);
   bMode1.attachPop(bMode1PopCallback, &bMode1);
   bMode2.attachPop(bMode2PopCallback, &bMode2);
   bMode3.attachPop(bMode3PopCallback, &bMode3);
   bMode4.attachPop(bMode4PopCallback, &bMode4);
+  SliderVit.attachPop(SliderVitPopCallback, &SliderVit);
+  SliderDev.attachPop(SliderDevPopCallback, &SliderDev);
+  SliderAcc.attachPop(SliderAccPopCallback, &SliderAcc);
   bStat.setText("Statut: off");
   nexInit(); // Initialisation de la librairie de l'Écran
-  delay(10);
+  
 
   // // Initialisation du compteur des encodeurs quad, vérins
   EncodeurVerinGauche.readAndReset(); // Clear Encodeur
@@ -78,7 +86,7 @@ void setup()
 
   // // Initialisation de la balance
   scale.begin(dat, clk);    // Pins pour le Output des donnees et la Clock.
-  scale.set_scale(5164.67); // Scale trouver apres la calibration des donnees
+  scale.set_scale(5000); // Scale trouver apres la calibration des donnees
   scale.tare();             // Mise à zéro de la pesée
   scale.power_down();
   springCalc(); // Calcul des combinaisons de ressorts
@@ -87,6 +95,7 @@ void setup()
   referenceBouton = analogRead(updn);
 
   Serial.println("Start"); // Checkup série
+
 } // fin setup
 void loop()
 {
@@ -105,13 +114,7 @@ void loop()
     jerkTimer = millis();     // Reset du timer
   }
 
-  /**** Vérification de l'état de la batterie ****/
-  if ((millis() - battTimer) > battDelay)
-  { // limitation de la fréquence de m-à-j de la charge
-    checkBatt();
-    battTimer = millis();
-  }
-
+  checkBatt();        //Vérification de l'état de la batterie
   fermerLED();        // Fermer les LED si les poignées ne sont pas activées sur l'écran.
   verinManuel();      // Vérifier le signal du bouton manuel du vérin
   checkMsg();         // Enlever les messages superflus à l'écran après 10s d'apparition
@@ -130,6 +133,7 @@ void relacherFrein()
 }
 void Frein()
 {
+  machine_stop();
   wheelstopped = 1;
   digitalWrite(bkd, LOW);
   digitalWrite(bkg, LOW);
@@ -157,7 +161,7 @@ void asserMoteurs()
   }
 
   // PID pour côté droit
-  eM = -vitesseDesireeDroite * CorrectionJog + vitesseDroiteReelle;
+  eM = -vitesseDesireeDroite * (CorrectionJog*CorrDeviation/100) + vitesseDroiteReelle;
   if (abs(eM) >= eMinM)
   {
     if (eM > -0.49 && eM < 0.49)
@@ -267,7 +271,6 @@ void accelMoteurs()
   {
     mode = abs(1 - digitalRead(Mode));
     dir = abs(1 - digitalRead(sens));
-    delay(15);
   }
   // Moteur côté controlleur  ------------------------------------------------------
   // Plage d'acceleration du moteur
@@ -302,9 +305,9 @@ void accelMoteurs()
     digitalWrite(dmg, HIGH);
 
   // Frein
-  if (!wheelstopped && !activ_poignees && !manette_en_cours) // Actionne les freins des roues motrices si celles-ci ne sont pas déjà arrêtées et qu'il n'y a plus de commandes provenant de la manette ET des poignées.
+  if ((!wheelstopped && !activ_poignees && !manette_en_cours /*&& millis() - DerniereComm > 2000*/) /*|| signal_Joystick*/) // Actionne les freins des roues motrices si celles-ci ne sont pas déjà arrêtées et qu'il n'y a plus de commandes provenant de la manette ET des poignées.
     Frein();
-  else if (wheelstopped && (activ_poignees || manette_en_cours)) // Désactive les freins des roues motrices si les roues sont déjà arrêtées et que le Arduino reçoit des commandes provenant des poignées OU de la manette.
+  else if ((wheelstopped && (activ_poignees || manette_en_cours)) /*&& !signal_Joystick*/) // Désactive les freins des roues motrices si les roues sont déjà arrêtées et que le Arduino reçoit des commandes provenant des poignées OU de la manette.
     relacherFrein();
 } // fin accelMoteurs
 void machine_stop()
@@ -355,12 +358,12 @@ void vitesseEncodeur()
 }
 void MAJ_PWM()
 {
-  if (abs(PWMD_reel) > 180 || abs(PWMG_reel) > 180 || abs(PWMG) > 180 || abs(PWMD) > 180) // Condition de sécurité
+  if (abs(PWMD_reel) > PWM_MAX || abs(PWMG_reel) > PWM_MAX || abs(PWMG) > PWM_MAX || abs(PWMD) > PWM_MAX) // Condition de sécurité
   {
     machine_stop();
     Serial.println("MACHINE STOP - Vitesse trop elevee");
   }
-
+/*
   Serial.print("VDD: ");
   Serial.print(vitesseDesireeDroite);
 
@@ -383,7 +386,7 @@ void MAJ_PWM()
   Serial.print(PWMG);
 
   Serial.print("    PWMG_reel: ");
-  Serial.println(PWMG_reel);
+  Serial.println(PWMG_reel);*/
   
   analogWrite(mg, abs(PWMG_reel));
   analogWrite(md, abs(PWMD_reel));
@@ -459,11 +462,14 @@ void consigneVerins()
   // Vérification des limit switch et changement du PWM en conséquence
   if (digitalRead(LMTBG) == HIGH)
   {
-    EncodeurVerinGauche.readAndReset(); // Reset de l'encodeur si la limite est atteinte
-    if (PWMVG > 0)
+    if (digitalRead(LMTBG) == HIGH) //Il y a des valeurs aberrantes, alors on les ignore avec ce deuxième test
     {
-      PWMVG = 0;
-      PWM_VG_reel = 0;
+      EncodeurVerinGauche.readAndReset(); // Reset de l'encodeur si la limite est atteinte
+      if (PWMVG > 0)
+      {
+        PWMVG = 0;
+        PWM_VG_reel = 0;
+      }
     }
   }
   if (digitalRead(LMTBD) == HIGH)
@@ -594,7 +600,11 @@ void calcPoids()
   poids /= 100;
   Serial.print("poids dans calcPoids : ");
   Serial.println(poids);
-  if (poids < R919)
+  if (poids == -10)
+  {
+    poids = 0;
+  }
+  else if (poids < R919)
   {
     poids = R919;
   }
@@ -707,6 +717,9 @@ void setFourchette()
 /*--- BATTERIE ---*/
 void checkBatt()
 {
+  if ((millis() - battTimer) > battDelay)
+  { // limitation de la fréquence de m-à-j de la charge
+
   if ((PWMG_reel + PWMD_reel + PWM_VG_reel + PWM_VD_reel) == 0)
   {
     battSum = 0;
@@ -759,6 +772,8 @@ void checkBatt()
     }
     battPos++;
   }
+  battTimer = millis();
+  }
 } // Fin checkBatt
 
 /*--- MANETTE ---*/
@@ -767,6 +782,7 @@ void traitementDonnesManette(String data)
   signal_verin = (data.substring(0, 1)).toInt();
   signal_x = map((data.substring(1, 5)).toInt(), 1000, 2024, 255, -255);
   signal_y = map((data.substring(5, 9)).toInt(), 1000, 2024, 255, -255);
+  signal_Joystick = (data.substring(9, 10)).toInt();
 
   pwmD_Value = -(float)(signal_x + signal_y);
   pwmG_Value = (float)(-signal_x + signal_y);
@@ -879,30 +895,18 @@ void SecuriteManette()
 }
 
 /*--- POIGNÉES ---*/
-int smoothing(const byte analogPin)
-{
-  int array = 0;
-
-  for (int i = 0; i < 8; i++)
-  {
-    array += analogRead(analogPin);
-    //delay(5);
-  }
-
-  return (array / 8);
-}
 void ContrlPoignees()
 {
   bStat.setText("Statut: on");
   // Lecture des gachettes aux poignées (potentiomètre). Plage de conversion entre 610-350 pour gauche et 900-670 (branché à l'envers) pour s'adapter à la rotation limitée des gachettes. Finit à 100/970 (et non 0/1023)
   // pour éviter des signaux parasites si la gachette n'est pas parfaitement dépressée.
-  pwmg = map(smoothing(potg), 160, 32, 0, 255);
+  pwmg = map(analogRead(potg), 160, 32, 0, 255);
   if (pwmg < 50) // Si la valeur du potentiomètre sort de la plage
     pwmg = 0;
   else if (pwmg > 255)
     pwmg = 255;
 
-  pwmd = map(smoothing(potd), 135, 300, 0, 255);
+  pwmd = map(analogRead(potd), 135, 300, 0, 255);
   if (pwmd < 50) // Si la valeur du potentiomètre sort de la plage
     pwmd = 0;
   else if (pwmd > 255)
@@ -1002,17 +1006,24 @@ void fermerLED()
 /*--- ÉCRAN ---*/
 void checkMsg()
 {
-  if (millis() - timerMsgMaintien > TempsMaxMaintien && boolMsgMaintien)
+  if (millis() - timerMsgMaintien > TempsMaxMsgMaintien && boolMsgMaintien)
     {
       msgmaintien.setText(" ");
       boolMsgMaintien = false;
     }
 
-  if (millis() - timerMsgVitesse > TempsMaxVitesse && boolMsgVitesse)
+  if (millis() - timerMsgVitesse > TempsMaxMsgVitesse && boolMsgVitesse)
     {
       msgvitesse.setText(" ");
       boolMsgVitesse = false;
     }
+
+  if (millis() - timerMsgPoids > TempsMaxMsgPoids && boolMsgPoids)
+    {
+      msgpoids.setText(" ");
+      boolMsgPoids = false;
+    }
+
 }
 void checkpage()
 {
@@ -1042,15 +1053,92 @@ void checkpage()
 } // Fin checkpage
 void nextPopCallback(void *ptr)
 {
+
+  if (nmode == 1)
+  {
+    MODE.setText("1");
+    bMode1.Set_background_color_bco(3463);
+  }
+  else if (nmode == 2)
+  {
+    MODE.setText("2");
+    bMode2.Set_background_color_bco(3463);
+  }
+  else if (nmode == 3)
+  {
+    MODE.setText("3");
+    bMode3.Set_background_color_bco(3463);
+  }
+  else if (nmode == 4)
+  {
+    MODE.setText("4");
+    bMode4.Set_background_color_bco(3463);
+  }
+  else
+  {
+    Serial.println("Erreur nextPopCallback");
+  }
+
+
   Serial.println("nextPopCallback");
   npage = 2;
-  delay(200);
+  //delay(200);
+}
+void next2PopCallback(void *ptr)
+{
+  Serial.println("next2PopCallback");
+  npage = 3;
+
+  if (PremierChangementP3 == true)
+  {
+    SliderVit.setValue(CorrSecuriteVitesse);
+    SliderDev.setValue(CorrDeviation);
+    SliderAcc.setValue(CorrAcceleration);
+    ValVit.setValue(CorrSecuriteVitesse);
+    ValDev.setValue(CorrDeviation);
+    ValAcc.setValue(CorrAcceleration);
+    ACCELMAX *= (float)CorrAcceleration / 100.0;
+    PremierChangementP3 = false;
+  }
+  //delay(200);
 }
 void prevPopCallback(void *ptr)
 {
   Serial.println("prevPopCallback");
   npage = 0;
-  delay(200);
+  //delay(200);
+}
+void prev2PopCallback(void *ptr)
+{
+  Serial.println("prev2PopCallback");
+  npage = 2;
+
+  if (nmode == 1)
+  {
+    MODE.setText("1");
+    bMode1.Set_background_color_bco(3463);
+  }
+  else if (nmode == 2)
+  {
+    MODE.setText("2");
+    bMode2.Set_background_color_bco(3463);
+  }
+  else if (nmode == 3)
+  {
+    MODE.setText("3");
+    bMode3.Set_background_color_bco(3463);
+  }
+  else if (nmode == 4)
+  {
+    MODE.setText("4");
+    bMode4.Set_background_color_bco(3463);
+  }
+  else
+  {
+    Serial.println("Erreur nextPopCallback");
+  }
+
+  //delay(200);
 }
 void majMaintienPopCallback(void *ptr)
 {
@@ -1073,6 +1161,7 @@ void majVitessePopCallback(void *ptr)
 {
   Vitesse.getValue(&speedcoef);
   coefVitesse = (float)speedcoef / 100.0;
+  PWM_MAX = 30+35*coefVitesse*PWM_MAX_AJUST*(CorrSecuriteVitesse/100);
 
   timerMsgVitesse = millis();
   boolMsgVitesse = true;
@@ -1107,6 +1196,7 @@ void okPopCallback(void *ptr)
 }
 void balancePopCallback(void *ptr)
 {
+  msgpoids.setText("Pesee en cours...");
   chr[0] = 0;
   Serial.println("balancePopCallback");
   peserPatient();
@@ -1117,8 +1207,10 @@ void balancePopCallback(void *ptr)
   }
   else
   {
-    msgpoids.setText("");
+    msgpoids.setText("Pesee terminee");
   }
+  timerMsgPoids = millis();
+  boolMsgPoids = true;
   memset(chr, 0, 3);
   itoa((int)(POIDS + poidsOffset), chr, 10);
   poidspatient.setText(chr);
@@ -1138,23 +1230,62 @@ void bMode1PopCallback(void *ptr)
 {
   nmode = 1;
   MODE.setText("1");
+  bMode1.Set_background_color_bco(3463);
+  bMode2.Set_background_color_bco(50712);
+  bMode3.Set_background_color_bco(50712);
+  bMode4.Set_background_color_bco(50712);
   activ_poignees = HIGH;
 }
 void bMode2PopCallback(void *ptr)
 {
   nmode = 2;
   MODE.setText("2");
+  bMode1.Set_background_color_bco(50712);
+  bMode2.Set_background_color_bco(3463);
+  bMode3.Set_background_color_bco(50712);
+  bMode4.Set_background_color_bco(50712);
   activ_poignees = HIGH;
 }
 void bMode3PopCallback(void *ptr)
 {
   nmode = 3;
   MODE.setText("3");
+  bMode1.Set_background_color_bco(50712);
+  bMode2.Set_background_color_bco(50712);
+  bMode3.Set_background_color_bco(3463);
+  bMode4.Set_background_color_bco(50712);
   activ_poignees = HIGH;
 }
 void bMode4PopCallback(void *ptr)
 {
   nmode = 4;
   MODE.setText("4");
+  bMode1.Set_background_color_bco(50712);
+  bMode2.Set_background_color_bco(50712);
+  bMode3.Set_background_color_bco(50712);
+  bMode4.Set_background_color_bco(3463);
   activ_poignees = HIGH;
+}
+void SliderVitPopCallback(void *ptr)
+{
+  Vit.getValue(&CorrSecuriteVitesse);
+  EEPROM.write(eepromCorrSecuriteVitesseAddr, CorrSecuriteVitesse);
+  Serial.print("Vitesse: ");
+  Serial.println(CorrSecuriteVitesse);
+
+}
+void SliderDevPopCallback(void *ptr)
+{
+  Dev.getValue(&CorrDeviation);
+  EEPROM.write(eepromCorrDeviationAddr, CorrDeviation);
+  Serial.print("Deviation: ");
+  Serial.println(CorrDeviation);
+}
+void SliderAccPopCallback(void *ptr)
+{
+  Acc.getValue(&CorrAcceleration);
+  ACCELMAX *= (float)CorrAcceleration / 100.0;
+  EEPROM.write(eepromCorrAccelerationAddr, CorrAcceleration);
+  Serial.print("Acceleration: ");
+  Serial.println(CorrAcceleration);
 }
