@@ -62,9 +62,13 @@ void setup()
   ok.attachPop(okPopCallback, &ok);
   balance.attachPop(balancePopCallback, &balance);
   next.attachPop(nextPopCallback);
+  ImgNext.attachPop(nextPopCallback);
   next2.attachPop(next2PopCallback);
+  ImgNext2.attachPop(next2PopCallback);
   prev.attachPop(prevPopCallback);
+  ImgPrev.attachPop(prevPopCallback);
   prev2.attachPop(prev2PopCallback);
+  ImgPrev2.attachPop(prev2PopCallback);
   bOn.attachPop(bOnPopCallback, &bOn);
   bOff.attachPop(bOffPopCallback, &bOff);
   bMode1.attachPop(bMode1PopCallback, &bMode1);
@@ -74,6 +78,9 @@ void setup()
   SliderVit.attachPop(SliderVitPopCallback, &SliderVit);
   SliderDev.attachPop(SliderDevPopCallback, &SliderDev);
   SliderAcc.attachPop(SliderAccPopCallback, &SliderAcc);
+  pVit.attachPop(pVitPopCallback, &pVit);
+  pDev.attachPop(pDevPopCallback, &pDev);
+  pAcc.attachPop(pAccPopCallback, &pAcc);
   bStat.setText("Statut: off");
   nexInit(); // Initialisation de la librairie de l'Écran
   
@@ -91,8 +98,6 @@ void setup()
   scale.power_down();
   springCalc(); // Calcul des combinaisons de ressorts
 
-  // // Initialisation de la valeur du bouton UpDn
-  referenceBouton = analogRead(updn);
 
   Serial.println("Start"); // Checkup série
 
@@ -104,19 +109,40 @@ void loop()
   /**** Mise à jour des PWM ****/
   if ((millis() - jerkTimer) > jerkTime)
   { // limitation de la fréquence de m-à-j des PWMs
+    checkBatt();              //Vérification de l'état de la batterie
     vitesseEncodeur();
     asserMoteurs();
     accelMoteurs();
+    verinManuel();            // Vérifier le signal du bouton manuel du vérin
     consigneVerins();
     accelVerin();
     CommManette();            // Vérifier si la manette est en communication  
     MAJ_PWM();                // M-à-j des PWMs
     jerkTimer = millis();     // Reset du timer
-  }
 
-  checkBatt();        //Vérification de l'état de la batterie
+    
+    // Roboclaw readCurrents
+    
+
+
+
+    
+
+
+      /*Serial.print("  PWVG: ");
+      Serial.print(PWM_VG_reel);
+      Serial.print("  DirVG: ");
+      Serial.print(digitalRead(dvg));
+      Serial.print("  PWMVD:  ");
+      Serial.print(PWM_VD_reel);
+      Serial.print("  DirVD: ");
+      Serial.print(digitalRead(dvd));
+      Serial.print(" UPDN: ");
+      Serial.println(analogRead(updn));*/
+
+
+  }
   fermerLED();        // Fermer les LED si les poignées ne sont pas activées sur l'écran.
-  verinManuel();      // Vérifier le signal du bouton manuel du vérin
   checkMsg();         // Enlever les messages superflus à l'écran après 10s d'apparition
   SecuriteManette();  // MachineStop si la manette se déconnecte pendant une communication
 } // fin loop
@@ -130,6 +156,7 @@ void relacherFrein()
   wheelstopped = 0;
   digitalWrite(bkd, HIGH);
   digitalWrite(bkg, HIGH);
+  Serial.println("Frein relache");
 }
 void Frein()
 {
@@ -137,6 +164,7 @@ void Frein()
   wheelstopped = 1;
   digitalWrite(bkd, LOW);
   digitalWrite(bkg, LOW);
+  Serial.println("Frein");
 }
 void asserMoteurs()
 {
@@ -161,7 +189,7 @@ void asserMoteurs()
   }
 
   // PID pour côté droit
-  eM = -vitesseDesireeDroite * (CorrectionJog*CorrDeviation/100) + vitesseDroiteReelle;
+  eM = -vitesseDesireeDroite * (CorrectionJog*(float)CorrDeviation/100) + vitesseDroiteReelle;
   if (abs(eM) >= eMinM)
   {
     if (eM > -0.49 && eM < 0.49)
@@ -269,7 +297,7 @@ void accelMoteurs()
 {
   if (activ_poignees == HIGH)
   {
-    mode = abs(1 - digitalRead(Mode));
+    mode = abs(digitalRead(Mode));
     dir = abs(1 - digitalRead(sens));
   }
   // Moteur côté controlleur  ------------------------------------------------------
@@ -304,10 +332,12 @@ void accelMoteurs()
   if (PWMG_reel > 0)
     digitalWrite(dmg, HIGH);
 
+
+
   // Frein
-  if ((!wheelstopped && !activ_poignees && !manette_en_cours /*&& millis() - DerniereComm > 2000*/) /*|| signal_Joystick*/) // Actionne les freins des roues motrices si celles-ci ne sont pas déjà arrêtées et qu'il n'y a plus de commandes provenant de la manette ET des poignées.
+  if ((!wheelstopped && !activ_poignees && !manette_en_cours && millis() - DerniereComm > 1250) || (!wheelstopped && signal_Joystick)) // Actionne les freins des roues motrices si celles-ci ne sont pas déjà arrêtées et qu'il n'y a plus de commandes provenant de la manette ET des poignées.
     Frein();
-  else if ((wheelstopped && (activ_poignees || manette_en_cours)) /*&& !signal_Joystick*/) // Désactive les freins des roues motrices si les roues sont déjà arrêtées et que le Arduino reçoit des commandes provenant des poignées OU de la manette.
+  else if ((wheelstopped && (activ_poignees || manette_en_cours)) && !signal_Joystick) // Désactive les freins des roues motrices si les roues sont déjà arrêtées et que le Arduino reçoit des commandes provenant des poignées OU de la manette.
     relacherFrein();
 } // fin accelMoteurs
 void machine_stop()
@@ -438,18 +468,8 @@ void asserVerins()
       rateError = 0;
     }
   }
-  
-  Serial.print("EGR:  ");
-  Serial.print(EncodeurVerinGauche.read());
-  Serial.print("  PWVG: ");
-  Serial.print(PWMVG);
-  Serial.print("  EDR:  ");
-  Serial.print(EncodeurVerinDroit.read());
-  Serial.print("  PWMVR:  ");
-  Serial.print(PWMVD);
-  Serial.print("  Output: ");
-  Serial.println(output);
 
+  
 } // Fin asserVerins
 void consigneVerins()
 {
@@ -508,10 +528,17 @@ void accelVerin()
   else
     PWM_VG_reel += diff_PWM_VG;
 
-  if (PWM_VG_reel < 0)
+
+  Serial.print("    PWM_VG_reel: ");
+  Serial.print(PWM_VG_reel);
+
+  if (PWM_VG_reel < 0){
     digitalWrite(dvg, LOW);
-  else
+    Serial.print("   low");
+  }
+  else{
     digitalWrite(dvg, HIGH);
+    Serial.print("   high");}
 
   diff_PWM_VD = (PWMVD - PWM_VD_reel);
   if (diff_PWM_VD > ACCELMAXVERIN)
@@ -521,36 +548,45 @@ void accelVerin()
   else
     PWM_VD_reel += diff_PWM_VD;
 
-  if (PWM_VD_reel < 0)
+  Serial.print("    PWM_VD_reel: ");
+  Serial.print(PWM_VD_reel);
+
+  if (PWM_VD_reel < 0){
     digitalWrite(dvd, LOW);
-  else
+    Serial.print("   low");}
+    
+  else{
     digitalWrite(dvd, HIGH);
+    Serial.println("   high");}
+    
 } // Fin accelVerin
 void verinManuel()
 {
-  int btnmanuel = analogRead(updn);
-  if (btnmanuel >= (referenceBouton - 100))
+  if (signal_verin == 0) // Si la manette n'est pas en communication
   {
-    if (btnreleased == 0)
-    {
+  int btnmanuel = analogRead(updn);
+  if (btnmanuel <= 100) //UpDn Pas appuyé
+  {
       PWMVG = 0;
       PWMVD = 0;
-      btnreleased = 1;
-    }
   }
-  else if (btnmanuel > (100))
+  else if (btnmanuel > 300 && btnmanuel < 700) //UpDn vers le bas
   {
     PWMVG = liftCoef;
     PWMVD = liftCoef;
-    btnreleased = 0;
-    // Serial.println("down");
+    Serial.println("down");
   }
-  else
+  else if( btnmanuel >= 1000) //UpDn vers le haut
   {
     PWMVG = -liftCoef;
     PWMVD = -liftCoef;
-    btnreleased = 0;
-    // Serial.println("up");
+    Serial.println("up");
+  }
+  /*else // En cas d'erreur
+  {
+    PWMVG = 0;
+    PWMVD = 0;
+  }*/
   }
 }
 void LoadCellCalib()
@@ -782,7 +818,18 @@ void traitementDonnesManette(String data)
   signal_verin = (data.substring(0, 1)).toInt();
   signal_x = map((data.substring(1, 5)).toInt(), 1000, 2024, 255, -255);
   signal_y = map((data.substring(5, 9)).toInt(), 1000, 2024, 255, -255);
-  signal_Joystick = (data.substring(9, 10)).toInt();
+  signal_Joystick = (data.substring(9, 10)).toInt();  // Bouton joystick non appuyé == 1 , appuyé == 0
+  
+  if (signal_Joystick == 1)  
+  {
+    signal_Joystick = 0;
+  }
+  else
+  {
+    signal_Joystick = 1;
+    signal_x = 0;
+    signal_y = 0;
+  }
 
   pwmD_Value = -(float)(signal_x + signal_y);
   pwmG_Value = (float)(-signal_x + signal_y);
@@ -919,6 +966,12 @@ void ContrlPoignees()
   {
     pwmg = -pwmg;
     pwmd = -pwmd;
+  }
+
+  if (signal_Joystick == 1) // Si le joystick est appuyé, les gachettes sont ignorées
+  {
+    pwmg = 0;
+    pwmd = 0;
   }
 
   // Mode d'avance du Zenith: roues solidaires (HIGH) ou indépendantes (LOW)
@@ -1161,7 +1214,8 @@ void majVitessePopCallback(void *ptr)
 {
   Vitesse.getValue(&speedcoef);
   coefVitesse = (float)speedcoef / 100.0;
-  PWM_MAX = 30+35*coefVitesse*PWM_MAX_AJUST*(CorrSecuriteVitesse/100);
+  PWM_MAX = 30+35*coefVitesse*((float)CorrSecuriteVitesse/100);
+
 
   timerMsgVitesse = millis();
   boolMsgVitesse = true;
@@ -1272,6 +1326,7 @@ void SliderVitPopCallback(void *ptr)
   EEPROM.write(eepromCorrSecuriteVitesseAddr, CorrSecuriteVitesse);
   Serial.print("Vitesse: ");
   Serial.println(CorrSecuriteVitesse);
+  PWM_MAX = 30+35*coefVitesse*((float)CorrSecuriteVitesse/100);
 
 }
 void SliderDevPopCallback(void *ptr)
@@ -1282,6 +1337,29 @@ void SliderDevPopCallback(void *ptr)
   Serial.println(CorrDeviation);
 }
 void SliderAccPopCallback(void *ptr)
+{
+  Acc.getValue(&CorrAcceleration);
+  ACCELMAX *= (float)CorrAcceleration / 100.0;
+  EEPROM.write(eepromCorrAccelerationAddr, CorrAcceleration);
+  Serial.print("Acceleration: ");
+  Serial.println(CorrAcceleration);
+}
+void pVitPopCallback(void *ptr)
+{
+  Vit.getValue(&CorrSecuriteVitesse);
+  EEPROM.write(eepromCorrSecuriteVitesseAddr, CorrSecuriteVitesse);
+  Serial.print("Vitesse: ");
+  Serial.println(CorrSecuriteVitesse);
+  PWM_MAX = 30+35*coefVitesse*((float)CorrSecuriteVitesse/100);
+}
+void pDevPopCallback(void *ptr)
+{
+  Dev.getValue(&CorrDeviation);
+  EEPROM.write(eepromCorrDeviationAddr, CorrDeviation);
+  Serial.print("Deviation: ");
+  Serial.println(CorrDeviation);
+}
+void pAccPopCallback(void *ptr)
 {
   Acc.getValue(&CorrAcceleration);
   ACCELMAX *= (float)CorrAcceleration / 100.0;
