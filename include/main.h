@@ -48,8 +48,8 @@ const byte dvg = 43;   // Direction Vérin côté batterie
 const byte dvd = 46;   // Direction Vérin côté contrôleur
 const byte dat = 24;   // Pin data du load cell amp
 const byte clk = 22;   // Pin clock du load cell amp
-const byte LMTHG = 41; // Limit switch haut côté batterie
-const byte LMTBG = 40; // Limit switch bas côté batterie
+const byte LMTHG = A2; // Limit switch haut côté batterie//41
+const byte LMTBG = A3; // Limit switch bas côté batterie//40
 const byte LMTHD = 25; // Limit switch haut côté controller
 const byte LMTBD = 23; // Limit switch bas côté controller
 

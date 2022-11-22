@@ -125,28 +125,27 @@ void loop()
     fermerLED();              // Fermer les LED si les poignées ne sont pas activées sur l'écran.
     majHorloge();             // Mise à jour de l'horloge
 
-    
-
-    /*Serial.print("  PWMG_Reel: ");
-    Serial.print(PWMG_reel);
-    Serial.print("  PWM_MAX: ");
-    Serial.print(PWM_MAX);
-    Serial.print("  PWMG: ");
+    /*Serial.print("PWMD: ");
+    Serial.print(PWMD);
+    Serial.print(" PWMDreel : ");
+    Serial.print(PWMD_reel);
+    Serial.print(" PWMG: ");
     Serial.print(PWMG);
-    Serial.print("  Vitesse desiree gauche: ");
-    Serial.print(vitesseDesireeGauche);
-    Serial.print("  Vitesse relle gauche: ");
-    Serial.print(vitesseReelleGauche);  
-    Serial.print("  Vitesse desiree Droite: ");
-    Serial.print(vitesseDesireeDroite);
-    Serial.print("  Vitesse relle Droite: ");
-    Serial.println(vitesseReelleDroite);*/
-    
+    Serial.print(" PWMGReel : ");
+    Serial.print(PWMG_reel);
+    Serial.print(" VitesseReeleDroite : ");
+    Serial.print(vitesseReelleDroite);
+    Serial.print(" VitesseReeleGauche : ");
+    Serial.println(vitesseReelleGauche);*/
+
+
 
 
 
     jerkTimer = millis();     // Reset du timer
   }
+  EncodeurRoueDroite.read(); //Améliorer la fiabilité de la mesure
+  EncodeurRoueGauche.read(); //Améliorer la fiabilité de la mesure
   checkMsg();         // Enlever les messages superflus à l'écran après 10s d'apparition
   SecuriteManette();  // MachineStop si la manette se déconnecte pendant une communication
 } // fin loop
@@ -296,38 +295,19 @@ void vitesseEncodeur()
   pulseParcouruDroit = EncodeurRoueDroite.read() - ancienPulseDroit;
   ancienPulseDroit = EncodeurRoueDroite.read();
 
-if(vitesseDesireeDroite >= 0 ){
-  if(pulseParcouruDroit < 80*vitesseDesireeDroite && pulseParcouruDroit > 20*vitesseReelleDroite) // Il y a des valeurs abbérantes qui sont filtrées
-    vitesseReelleDroite = (pulseParcouruDroit * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionDroit / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
-}
-if(vitesseDesireeDroite < 0){
-  if(pulseParcouruDroit > 80*vitesseDesireeDroite && pulseParcouruDroit < 20*vitesseReelleDroite) // Il y a des valeurs abbérantes qui sont filtrées
-    vitesseReelleDroite = (pulseParcouruDroit * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionDroit / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
-}
+  vitesseReelleDroite = (pulseParcouruDroit * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionDroit / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
+
 
 
   //*** Vitesse côté gauche ***//
   tempsAcquisitionGauche = millis() - ancienTempsAcquisitionGauche;
   ancienTempsAcquisitionGauche = millis();
-  pulseParcouruGauche = -EncodeurRoueGauche.read() - ancienPulseGauche;
-  ancienPulseGauche = -EncodeurRoueGauche.read();
+  pulseParcouruGauche = - EncodeurRoueGauche.read() - ancienPulseGauche;
+  ancienPulseGauche = - EncodeurRoueGauche.read();
 
-if(vitesseDesireeGauche >= 0){
-  if(pulseParcouruGauche < 80*vitesseDesireeGauche && pulseParcouruGauche > 20*vitesseReelleGauche) // Il y a des valeurs abbérantes qui sont filtrées
-    vitesseReelleGauche = (pulseParcouruGauche * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionGauche / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
-  else
-    Serial.print("*");
-}
+  vitesseReelleGauche = (pulseParcouruGauche * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionGauche / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
 
-if(vitesseDesireeGauche < 0){
-  if(pulseParcouruGauche > 80*vitesseDesireeGauche && pulseParcouruGauche < 20*vitesseReelleGauche) // Il y a des valeurs abbérantes qui sont filtrées
-    vitesseReelleGauche = (pulseParcouruGauche * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionGauche / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
-  else
-    Serial.print("*");
-}
-
-
-
+/*
   Serial.print("  pulseParcouruGauche: ");
   Serial.print(pulseParcouruGauche);
   Serial.print(" VitesseReelleGauche: ");
@@ -335,13 +315,13 @@ if(vitesseDesireeGauche < 0){
   Serial.print("  Max: ");
   Serial.print(80*vitesseDesireeGauche);
   Serial.print("  Min: ");
-  Serial.println(20*vitesseReelleGauche);
+  Serial.print(20*vitesseReelleGauche);
 
- /* Serial.print("  pulseParcouruDroit: ");
+  Serial.print("  pulseParcouruDroit: ");
   Serial.print(pulseParcouruDroit);
   Serial.print(" VitesseReelleDroite: ");
-  Serial.println(vitesseReelleDroite);*/
-
+  Serial.println(vitesseReelleDroite);
+*/
 
 }
 void MAJ_PWM()
@@ -409,7 +389,7 @@ void consigneVerins()
   }
 
   // Vérification des limit switch et changement du PWM en conséquence
-  if (digitalRead(LMTBG) == HIGH)
+  if (analogRead(LMTBG) > 100) //(digitalRead(LMTBG) == HIGH)
   {
     EncodeurVerinGauche.readAndReset(); // Reset de l'encodeur si la limite est atteinte
     if (PWMVG > 0)
@@ -427,7 +407,7 @@ void consigneVerins()
       PWM_VD_reel = 0;
     }
   }
-  if (digitalRead(LMTHG) == HIGH)
+  if  (analogRead(LMTHG) > 100)//(digitalRead(LMTHG) == HIGH)
   {
     if (PWMVG < 0)
     {
@@ -869,18 +849,18 @@ void SecuriteManette()
 }
 void ChangementVitesseManette()
 {
-    if (signal_verin == 2 && coefVitesse < 4.5 && millis()-TempsChangementVitesse > 250){
+    if (signal_verin == 2 && coefVitesse < 4.5 && millis()-TempsChangementVitesse > 175){
       coefVitesse += 0.25;
       speedcoef = coefVitesse*100;
-      PWM_MAX = 30+35*coefVitesse;
+      PWM_MAX = 30+40*coefVitesse;
       Vitesse.setValue(speedcoef);
       VitesseFloat.setValue(speedcoef);
       TempsChangementVitesse = millis();
     }
-    else if (signal_verin == 3 && coefVitesse > 0 && millis()-TempsChangementVitesse > 250){
+    else if (signal_verin == 3 && coefVitesse > 0 && millis()-TempsChangementVitesse > 175){
       coefVitesse -= 0.25;
       speedcoef = coefVitesse*100;
-      PWM_MAX = 30+35*coefVitesse;
+      PWM_MAX = 30+40*coefVitesse;
       Vitesse.setValue(speedcoef);
       VitesseFloat.setValue(speedcoef);
       TempsChangementVitesse = millis();
@@ -1203,7 +1183,7 @@ void majVitessePopCallback(void *ptr)
 {
   Vitesse.getValue(&speedcoef);
   coefVitesse = (float)speedcoef / 100.0;
-  PWM_MAX = 30+35*coefVitesse;
+  PWM_MAX = 30+40*coefVitesse;
 
 
   timerMsgVitesse = millis();
