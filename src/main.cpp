@@ -13,6 +13,7 @@ void setup()
   Serial.setTimeout(100);
   Serial1.begin(115200);
   Serial2.begin(115200);
+  nexSerial.begin(9600);
   SPI.begin();
   Wire.begin(4);
   Wire.onReceive(receiveEvent);
@@ -21,68 +22,27 @@ void setup()
   poidsOffset = 0; // EEPROM.read(eepromPoidsOffsetAddr) - 128; // Lecture EEPROM
   CorrDeviation = EEPROM.read(eepromCorrDeviationAddr); // Lecture EEPROM
   CorrAcceleration = EEPROM.read(eepromCorrAccelerationAddr); // Lecture EEPROM
+  Langue = EEPROM.read(eepromLangueAddr); // Lecture EEPROM
 
-  // // Augmentation de la frequence PWM pour les moteurs et les verins
+
+
+  // // Établit la liste des items Nextion à surveiller (items qui peuvent être appuyés) pour l'écran
+  SetAttachPop();
+  
+  //nexInit(); // Initialisation de la librairie de l'Écran
+  bStat.setText("Statut: off");
+  if(Langue == ANGLAIS)
+     InitAnglaisHMI();
+  
+    // // Augmentation de la frequence PWM pour les moteurs et les verins
   TCCR2B = (TCCR2B & 0b11111000) | 0x01;
   TCCR3B = (TCCR3B & 0b11111000) | 0x01;
   TCCR4B = (TCCR4B & 0b11111000) | 0x01;
 
   // // pinMode
-  pinMode(mg, OUTPUT);
-  pinMode(md, OUTPUT);
-  pinMode(bkd, OUTPUT);
-  pinMode(bkg, OUTPUT);
-  pinMode(vg, OUTPUT);
-  pinMode(vd, OUTPUT);
-  pinMode(dvd, OUTPUT);
-  pinMode(dvg, OUTPUT);
-  pinMode(dmd, OUTPUT);
-  pinMode(dmg, OUTPUT);
-  pinMode(mag, OUTPUT);
-  pinMode(updn, INPUT);
-  pinMode(LMTBD, INPUT_PULLUP);
-  pinMode(LMTBG, INPUT_PULLUP);
-  pinMode(LMTHD, INPUT_PULLUP);
-  pinMode(LMTHG, INPUT_PULLUP);
-  pinMode(lmt, INPUT_PULLUP);
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(sens, INPUT_PULLUP);
-  pinMode(Mode, INPUT_PULLUP);
-  pinMode(potd, INPUT_PULLUP);
-  pinMode(potg, INPUT_PULLUP);
-  pinMode(LEDB, OUTPUT);
-  pinMode(LEDJ, OUTPUT);
-  pinMode(LEDR, OUTPUT);
-  pinMode(LEDV, OUTPUT);
+  SetPinMode();
 
-  // // Établit la liste des items Nextion à surveiller (items qui peuvent être appuyés) pour l'écran
-  majMaintien.attachPop(majMaintienPopCallback, &majMaintien);
-  majVitesse.attachPop(majVitessePopCallback, &majVitesse);
-  ok.attachPop(okPopCallback, &ok);
-  balance.attachPop(balancePopCallback, &balance);
-  next.attachPop(nextPopCallback);
-  ImgNext.attachPop(nextPopCallback);
-  next2.attachPop(next2PopCallback);
-  ImgNext2.attachPop(next2PopCallback);
-  prev.attachPop(prevPopCallback);
-  ImgPrev.attachPop(prevPopCallback);
-  prev2.attachPop(prev2PopCallback);
-  ImgPrev2.attachPop(prev2PopCallback);
-  bOn.attachPop(bOnPopCallback, &bOn);
-  bOff.attachPop(bOffPopCallback, &bOff);
-  bMode1.attachPop(bMode1PopCallback, &bMode1);
-  bMode2.attachPop(bMode2PopCallback, &bMode2);
-  bMode3.attachPop(bMode3PopCallback, &bMode3);
-  bMode4.attachPop(bMode4PopCallback, &bMode4);
-  SliderDev.attachPop(SliderDevPopCallback, &SliderDev);
-  SliderAcc.attachPop(SliderAccPopCallback, &SliderAcc);
-  HeurePlus.attachPop(HeurePlusPopCallback, &HeurePlus);
-  HeureMoins.attachPop(HeureMoinsPopCallback, &HeureMoins);
-  MinutePlus.attachPop(MinutePlusPopCallback, &MinutePlus);
-  MinuteMoins.attachPop(MinuteMoinsPopCallback, &MinuteMoins);
-  bStat.setText("Statut: off");
-  nexInit(); // Initialisation de la librairie de l'Écran
-  
+
   // // Initialisation de l'horloge
   rtc.begin();
   now = rtc.now();
@@ -91,10 +51,7 @@ void setup()
   Heure.setValue(now.hour());
 
   // // Initialisation du compteur des encodeurs quad, vérins
-  EncodeurVerinGauche.readAndReset(); // Clear Encodeur
-  EncodeurVerinDroit.readAndReset();  // Clear Encodeur
-  EncodeurRoueDroite.readAndReset();
-  EncodeurRoueGauche.readAndReset();
+  ResetEncodeurs();
 
   // // Initialisation de la balance
   scale.begin(dat, clk);    // Pins pour le Output des donnees et la Clock.
@@ -124,26 +81,11 @@ void loop()
     MAJ_PWM();                // M-à-j des PWMs
     fermerLED();              // Fermer les LED si les poignées ne sont pas activées sur l'écran.
     majHorloge();             // Mise à jour de l'horloge
-
-    /*Serial.print("PWMD: ");
-    Serial.print(PWMD);
-    Serial.print(" PWMDreel : ");
-    Serial.print(PWMD_reel);
-    Serial.print(" PWMG: ");
-    Serial.print(PWMG);
-    Serial.print(" PWMGReel : ");
-    Serial.print(PWMG_reel);
-    Serial.print(" VitesseReeleDroite : ");
-    Serial.print(vitesseReelleDroite);
-    Serial.print(" VitesseReeleGauche : ");
-    Serial.println(vitesseReelleGauche);*/
-
-
-
-
+    Serial.println(analogRead(potd));
 
     jerkTimer = millis();     // Reset du timer
   }
+
   EncodeurRoueDroite.read(); //Améliorer la fiabilité de la mesure
   EncodeurRoueGauche.read(); //Améliorer la fiabilité de la mesure
   checkMsg();         // Enlever les messages superflus à l'écran après 10s d'apparition
@@ -189,54 +131,41 @@ void asserMoteurs()
     }
 
   //*** PID pour côté droit ***//
-    eM = -vitesseDesireeDroite * (CorrectionJog*(float)CorrDeviation/100) + vitesseReelleDroite;
-    if (abs(eM) >= eMinM)
-    {
-      rateErrorM_R = (eM - lastErrorM_R); // Dérivée
-      LimiterDouble(&rateErrorM_R, rateErrorMaxM);
+    eM = -vitesseDesireeDroite * ((float)CorrDeviation/100) + vitesseReelleDroite;
+    //LimiterDouble(&eM, abs(vitesseDesireeDroite));
+    rateErrorM_R = (eM - lastErrorM_R); // Dérivée
+    LimiterDouble(&rateErrorM_R, rateErrorMaxM);
 
-      outputM = kpM * eM + kdM * rateErrorM_R; // PID output
-      LimiterDouble(&outputM, outputMaxM);
-      PWMD += outputM ;
-      lastErrorM_R = eM; // Remember current error
+    outputM = kpM * eM + kdM * rateErrorM_R; // PID output
+    LimiterDouble(&outputM, outputMaxM);
+    PWMD += outputM ;
+    lastErrorM_R = eM; // Remember current error
 
-      if (abs(vitesseDesireeDroite) < 0.05)  //Ajouter une deadzone
-        PWMD = 0;
-      if (vitesseDesireeDroite > 0.1 && PWMD > -PWM_MIN && PWMD < 0) //Améliorer l'acceleration à basse vitesse
-        PWMD = -PWM_MIN;
-      else if (vitesseDesireeDroite < -0.1 && PWMD < PWM_MIN && PWMD > 0)
-        PWMD = PWM_MIN;
-    }
-    else
-    {
-      rateErrorM_R = 0;
-      outputM = 0;
-    }
+    if (abs(vitesseDesireeDroite) < 0.05)  //Ajouter une deadzone
+      PWMD = 0;
+    if (vitesseDesireeDroite > 0.1 && PWMD > -PWM_MIN && PWMD < 0) //Améliorer l'acceleration à basse vitesse 
+      PWMD = -PWM_MIN;
+    else if (vitesseDesireeDroite < -0.1 && PWMD < PWM_MIN && PWMD > 0) //Améliorer l'acceleration à basse vitesse (marche arrière)
+      PWMD = PWM_MIN;
 
   //*** PID pour côté gauche ***//
     eM = -vitesseDesireeGauche + vitesseReelleGauche;
-    if (abs(eM) >= eMinM)
-    {
-      rateErrorM_L = (eM - lastErrorM_L); // Dérivée
-      LimiterDouble(&rateErrorM_L, rateErrorMaxM);
+    //LimiterDouble(&eM, abs(vitesseDesireeGauche));
+    rateErrorM_L = (eM - lastErrorM_L); // Dérivée
+    LimiterDouble(&rateErrorM_L, rateErrorMaxM);
 
-      outputM = kpM * eM + kdM * rateErrorM_L; // PID output
-      LimiterDouble(&outputM, outputMaxM);
-      PWMG += outputM;
-      lastErrorM_L = eM; // Remember current error
+    outputM = kpM * eM + kdM * rateErrorM_L; // PID output
+    LimiterDouble(&outputM, outputMaxM);
+    PWMG += outputM;
+    lastErrorM_L = eM; // Remember current error
 
-      if (abs(vitesseDesireeGauche) < 0.05) //Ajouter une deadzone
-        PWMG = 0;
-      if (vitesseDesireeGauche > 0.1 && PWMG > -10 && PWMG < 0) //Améliorer l'acceleration à basse vitesse
-        PWMG = -10;
-      else if (vitesseDesireeGauche < -0.1 && PWMG < 10 && PWMG > 0)
-        PWMG = 10;
-    }
-    else
-    {
-      rateErrorM_L = 0;
-      outputM = 0;
-    }
+    if (abs(vitesseDesireeGauche) < 0.05) //Ajouter une deadzone
+      PWMG = 0;
+    if (vitesseDesireeGauche > 0.1 && PWMG > -10 && PWMG < 0) //Améliorer l'acceleration à basse vitesse
+      PWMG = -10;
+    else if (vitesseDesireeGauche < -0.1 && PWMG < 10 && PWMG > 0) //Améliorer l'acceleration à basse vitesse (marche arrière)
+      PWMG = 10;
+
 } // Fin asserMoteurs
 void accelMoteurs()
 {
@@ -294,35 +223,14 @@ void vitesseEncodeur()
   ancienTempsAcquisitionDroit = millis();
   pulseParcouruDroit = EncodeurRoueDroite.read() - ancienPulseDroit;
   ancienPulseDroit = EncodeurRoueDroite.read();
-
   vitesseReelleDroite = (pulseParcouruDroit * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionDroit / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
-
-
 
   //*** Vitesse côté gauche ***//
   tempsAcquisitionGauche = millis() - ancienTempsAcquisitionGauche;
   ancienTempsAcquisitionGauche = millis();
   pulseParcouruGauche = - EncodeurRoueGauche.read() - ancienPulseGauche;
   ancienPulseGauche = - EncodeurRoueGauche.read();
-
   vitesseReelleGauche = (pulseParcouruGauche * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionGauche / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
-
-/*
-  Serial.print("  pulseParcouruGauche: ");
-  Serial.print(pulseParcouruGauche);
-  Serial.print(" VitesseReelleGauche: ");
-  Serial.print(vitesseReelleGauche);
-  Serial.print("  Max: ");
-  Serial.print(80*vitesseDesireeGauche);
-  Serial.print("  Min: ");
-  Serial.print(20*vitesseReelleGauche);
-
-  Serial.print("  pulseParcouruDroit: ");
-  Serial.print(pulseParcouruDroit);
-  Serial.print(" VitesseReelleDroite: ");
-  Serial.println(vitesseReelleDroite);
-*/
-
 }
 void MAJ_PWM()
 {
@@ -349,33 +257,27 @@ void asserVerins()
 {
   //Vérifier nécessité de eMin
   e = -(float)EncodeurVerinGauche.read() + (float)EncodeurVerinDroit.read();
-  if (abs(e) >= eMin)
+  rateError = (e - lastError); // Dérivée
+  LimiterDouble(&rateError, rateErrorMax);
+
+  output = kp * e + kd * rateError; // PID output
+  LimiterDouble(&output, outputMax);
+  lastError = e; // Remember current error
+
+  if (PWMVG || PWMVD)
   {
-    rateError = (e - lastError); // Dérivée
-    LimiterDouble(&rateError, rateErrorMax);
-
-    output = kp * e + kd * rateError; // PID output
-    LimiterDouble(&output, outputMax);
-    lastError = e; // Remember current error
-
-    if (PWMVG || PWMVD)
+    PWMVG -= output;
+    if (PWMVG < -liftCoef)
     {
-      PWMVG -= output;
-      if (PWMVG < -liftCoef)
-      {
-        PWMVD -= PWMVG + liftCoef;
-        PWMVG = -liftCoef;
-      }
-      else if (PWMVG > liftCoef)
-      {
-        PWMVD -= PWMVG - liftCoef;
-        PWMVG = liftCoef;
-      }
+      PWMVD -= PWMVG + liftCoef;
+      PWMVG = -liftCoef;
     }
-    else
+    else if (PWMVG > liftCoef)
     {
-      rateError = 0;
+      PWMVD -= PWMVG - liftCoef;
+      PWMVG = liftCoef;
     }
+
   }
 
   
@@ -569,7 +471,10 @@ void lmtWait(int lap)
     if (digitalRead(lmt) == HIGH)
     {
       Serial.println("Err. Obstruction Soudaine Fourchette");
-      msgmaintien.setText("Obstruction soudaine : tenir le ceintre pendant toute la configuration");
+      if(Langue == FRANCAIS)
+        msgmaintien.setText("Obstruction soudaine : tenir le ceintre pendant toute la configuration");
+      else if(Langue == ANGLAIS)
+        msgmaintien.setText("Sudden obstruction : hold the harness during the whole configuration");
       MsgObstruction = true;
       break;
     }
@@ -625,7 +530,10 @@ void setFourchette()
   else
   {
     Serial.println("Err. Obstruction Fourchette");
-    msgmaintien.setText("Obstruction : soulever le ceintre et essayer de nouveau");
+    if(Langue == FRANCAIS)
+      msgmaintien.setText("Obstruction : soulever le ceintre et essayer de nouveau");
+    else if(Langue == ANGLAIS)
+      msgmaintien.setText("Obstruction : lift the harness and try again");
     MsgObstruction = true;
   }
   digitalWrite(mag, LOW);
@@ -636,7 +544,10 @@ void setFourchette()
 
   if(!MsgObstruction)
   {
-    msgmaintien.setText("Calibration terminee");
+    if(Langue == FRANCAIS)
+      msgmaintien.setText("Configuration terminee");
+    else if(Langue == ANGLAIS)
+      msgmaintien.setText("Configuration finished");
   }
   MsgObstruction = false;
 
@@ -685,12 +596,18 @@ void checkBatt()
       { // Niveau critique !!!
         battLevel = 5;
         Serial.println("Batterie niveau critique !");
-        msgbatterie.setText("Niveau de charge critque");
+        if(Langue == FRANCAIS)
+          msgbatterie.setText("Niveau de charge critque");
+        else if(Langue == ANGLAIS)
+          msgbatterie.setText("Critical charge level");
       }
       else if (battAverage < -20)
       { // Charger la batterie
         battLevel = 10;
-        msgbatterie.setText("Charger la batterie");
+        if(Langue == FRANCAIS)
+          msgbatterie.setText("Charger la batterie");
+        else if(Langue == ANGLAIS)
+          msgbatterie.setText("Charge the battery");
       }
       else if ((battAverage < battLevel) || (battErr == 3))
       {
@@ -838,9 +755,16 @@ void SecuriteManette()
     CommManette();
 
     Serial.println("    PERTE DE COMMUNICATION AVEC LA MANETTE");
-
-    msgErreur.setText("Erreur: ");
-    msgDisManette.setText("Manette deconnectee");
+    if(Langue == FRANCAIS)
+      {
+      msgErreur.setText("Erreur: ");
+      msgDisManette.setText("Manette deconnectee");
+      }
+    else if(Langue == ANGLAIS)
+      {
+      msgErreur.setText("Error: ");
+      msgDisManette.setText("Remote disconnected");
+      }
     delay(50);
     }
     msgErreur.setText(" ");
@@ -852,7 +776,7 @@ void ChangementVitesseManette()
     if (signal_verin == 2 && coefVitesse < 4.5 && millis()-TempsChangementVitesse > 175){
       coefVitesse += 0.25;
       speedcoef = coefVitesse*100;
-      PWM_MAX = 30+40*coefVitesse;
+      PWM_MAX = 30+45*coefVitesse;
       Vitesse.setValue(speedcoef);
       VitesseFloat.setValue(speedcoef);
       TempsChangementVitesse = millis();
@@ -860,7 +784,7 @@ void ChangementVitesseManette()
     else if (signal_verin == 3 && coefVitesse > 0 && millis()-TempsChangementVitesse > 175){
       coefVitesse -= 0.25;
       speedcoef = coefVitesse*100;
-      PWM_MAX = 30+40*coefVitesse;
+      PWM_MAX = 30+45*coefVitesse;
       Vitesse.setValue(speedcoef);
       VitesseFloat.setValue(speedcoef);
       TempsChangementVitesse = millis();
@@ -1038,32 +962,6 @@ void checkMsg()
     }
 
 }
-/*void checkpage()
-{
-  chr[0] = {0};
-  memset(chr, 0, 3);
-  nopageModes.getText(chr, 3);
-  nPagelue = atoi(chr);
-  if (nPagelue == 2)
-  {
-    npage = 2;
-  }
-  else
-  {
-    chr[0] = {0};
-    memset(chr, 0, 3);
-    nopageDebut.getText(chr, 3);
-    nPagelue = atoi(chr);
-    if (nPagelue == 1)
-    {
-      npage = 1;
-    }
-    else
-    {
-      Serial.println("Erreur checkpage");
-    }
-  }
-} // Fin checkpage*/
 void nextPopCallback(void *ptr)
 {
 
@@ -1095,7 +993,6 @@ void nextPopCallback(void *ptr)
 
   Serial.println("nextPopCallback");
   npage = 2;
-  //delay(200);
 }
 void next2PopCallback(void *ptr)
 {
@@ -1116,7 +1013,6 @@ void next2PopCallback(void *ptr)
   delay(100);
   HeureP3.setValue(now.hour());
   MinuteP3.setValue(now.minute());
-  //delay(200);
 }
 void prevPopCallback(void *ptr)
 {
@@ -1167,7 +1063,10 @@ void majMaintienPopCallback(void *ptr)
   if (wheelstopped)
   {
     Serial.println("Sequence fourchette");
-    msgmaintien.setText("Calibration en cours...");
+    if(Langue == FRANCAIS)
+      msgmaintien.setText("Calibration en cours...");
+    else if(Langue == ANGLAIS)
+      msgmaintien.setText("Calibration in progress...");
     PoucMaintien.getValue(&pcmaintien);
     calcPoids();
     fourchetteConfig();
@@ -1176,19 +1075,25 @@ void majMaintienPopCallback(void *ptr)
   else
   {
     Serial.println("Err. Freins releves !");
-    msgmaintien.setText("Freins releves !");
+    if(Langue == FRANCAIS)
+      msgmaintien.setText("Erreur. Freins actifs !");
+    else if(Langue == ANGLAIS)
+      msgmaintien.setText("Error. Brakes activated !");
   }
 }
 void majVitessePopCallback(void *ptr)
 {
   Vitesse.getValue(&speedcoef);
   coefVitesse = (float)speedcoef / 100.0;
-  PWM_MAX = 30+40*coefVitesse;
+  PWM_MAX = 30+45*coefVitesse;
 
 
   timerMsgVitesse = millis();
   boolMsgVitesse = true;
-  msgvitesse.setText("La vitesse a ete mise a jour");
+  if(Langue == FRANCAIS)
+    msgvitesse.setText("La vitesse a ete mise a jour");
+  else if(Langue == ANGLAIS)
+    msgvitesse.setText("Speed updated");
 }
 void okPopCallback(void *ptr)
 {
@@ -1219,18 +1124,28 @@ void okPopCallback(void *ptr)
 }
 void balancePopCallback(void *ptr)
 {
-  msgpoids.setText("Pesee en cours...");
+  if(Langue == FRANCAIS)
+    msgpoids.setText("Pesee en cours...");
+  else if(Langue == ANGLAIS)
+    msgpoids.setText("Weighing in progress...");
+
   chr[0] = 0;
   Serial.println("balancePopCallback");
   peserPatient();
   if (POIDS < 1)
   {
     POIDS = 0;
-    msgpoids.setText("Erreur : poids negatif");
+    if(Langue == FRANCAIS)
+      msgpoids.setText("Erreur : poids negatif");
+    else if(Langue == ANGLAIS)
+      msgpoids.setText("Error : negative weight");
   }
   else
   {
-    msgpoids.setText("Pesee terminee");
+    if(Langue == FRANCAIS)
+      msgpoids.setText("Pesee terminee");
+    else if(Langue == ANGLAIS)
+      msgpoids.setText("Weighing finished");
   }
   timerMsgPoids = millis();
   boolMsgPoids = true;
@@ -1240,12 +1155,18 @@ void balancePopCallback(void *ptr)
 }
 void bOnPopCallback(void *ptr)
 {
-  bStat.setText("Statut: on");
+  if(Langue == FRANCAIS)
+    bStat.setText("Statut: on");
+  else if(Langue == ANGLAIS)
+    bStat.setText("Status: on");
   activ_poignees = HIGH;
 }
 void bOffPopCallback(void *ptr)
 {
-  bStat.setText("Statut: off");
+  if(Langue == FRANCAIS)
+    bStat.setText("Statut: off");
+  else if(Langue == ANGLAIS)
+    bStat.setText("Status: off");
   activ_poignees = LOW;
   pwmg = 0;
   pwmd = 0;
@@ -1383,6 +1304,15 @@ void MinuteMoinsPopCallback(void *ptr)
     Minute.setValue(now.minute());
   }
 }
+void LangueFrPopCallback(void *ptr){
+  Langue = FRANCAIS;
+  EEPROM.write(eepromLangueAddr, Langue);
+}
+void LangueEnPopCallback(void *ptr){
+  Langue = ANGLAIS;
+  EEPROM.write(eepromLangueAddr, Langue);
+}
+
 
 //Autres fonctions
 void LimiterDouble(double *nombre, int max)
@@ -1398,4 +1328,100 @@ void LimiterInt(int *nombre, int max)
     *nombre = -max;
   else if (*nombre > max)
     *nombre = max;
+}
+void SetPinMode(){
+  pinMode(mg, OUTPUT);
+  pinMode(md, OUTPUT);
+  pinMode(bkd, OUTPUT);
+  pinMode(bkg, OUTPUT);
+  pinMode(vg, OUTPUT);
+  pinMode(vd, OUTPUT);
+  pinMode(dvd, OUTPUT);
+  pinMode(dvg, OUTPUT);
+  pinMode(dmd, OUTPUT);
+  pinMode(dmg, OUTPUT);
+  pinMode(mag, OUTPUT);
+  pinMode(updn, INPUT);
+  pinMode(LMTBD, INPUT_PULLUP);
+  pinMode(LMTBG, INPUT_PULLUP);
+  pinMode(LMTHD, INPUT_PULLUP);
+  pinMode(LMTHG, INPUT_PULLUP);
+  pinMode(lmt, INPUT_PULLUP);
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(sens, INPUT_PULLUP);
+  pinMode(Mode, INPUT_PULLUP);
+  pinMode(potd, INPUT_PULLUP);
+  pinMode(potg, INPUT_PULLUP);
+  pinMode(LEDB, OUTPUT);
+  pinMode(LEDJ, OUTPUT);
+  pinMode(LEDR, OUTPUT);
+  pinMode(LEDV, OUTPUT);
+}
+void SetAttachPop(){
+  majMaintien.attachPop(majMaintienPopCallback, &majMaintien);
+  majVitesse.attachPop(majVitessePopCallback, &majVitesse);
+  ok.attachPop(okPopCallback, &ok);
+  balance.attachPop(balancePopCallback, &balance);
+  next.attachPop(nextPopCallback);
+  ImgNext.attachPop(nextPopCallback);
+  next2.attachPop(next2PopCallback);
+  ImgNext2.attachPop(next2PopCallback);
+  prev.attachPop(prevPopCallback);
+  ImgPrev.attachPop(prevPopCallback);
+  prev2.attachPop(prev2PopCallback);
+  ImgPrev2.attachPop(prev2PopCallback);
+  bOn.attachPop(bOnPopCallback, &bOn);
+  bOff.attachPop(bOffPopCallback, &bOff);
+  bMode1.attachPop(bMode1PopCallback, &bMode1);
+  bMode2.attachPop(bMode2PopCallback, &bMode2);
+  bMode3.attachPop(bMode3PopCallback, &bMode3);
+  bMode4.attachPop(bMode4PopCallback, &bMode4);
+  SliderDev.attachPop(SliderDevPopCallback, &SliderDev);
+  SliderAcc.attachPop(SliderAccPopCallback, &SliderAcc);
+  HeurePlus.attachPop(HeurePlusPopCallback, &HeurePlus);
+  HeureMoins.attachPop(HeureMoinsPopCallback, &HeureMoins);
+  MinutePlus.attachPop(MinutePlusPopCallback, &MinutePlus);
+  MinuteMoins.attachPop(MinuteMoinsPopCallback, &MinuteMoins);
+  LangueFr.attachPop(LangueFrPopCallback, &LangueFr);
+  LangueEn.attachPop(LangueEnPopCallback, &LangueEn);
+}
+void InitAnglaisHMI(){
+
+       setTextOtherPage("TxtReg", "Reglages", "Settings");
+        setTextOtherPage("TxtHor", "Reglages", "Clock");
+        setTextOtherPage("TxtDev", "Reglages", "Deviation");
+        setTextOtherPage("TxtAcc", "Reglages", "Acceleration");
+        setTextOtherPage("TxtMan", "Reglages", "See user manual \r\nbefore making changes");
+        setTextOtherPage("TxtLent", "Reglages", "Slow");
+        setTextOtherPage("TxtRapide", "Reglages", "Fast");
+        setTextOtherPage("TxtGauche", "Reglages", "Left");
+        setTextOtherPage("TxtDroite", "Reglages", "Right");
+        setTextOtherPage("TxtLangue", "Reglages", "Language");
+    
+
+
+    setTextOtherPage("TxtMode", "ModeControle", "Actual mode: ");
+    setTextOtherPage("TxtMode1", "ModeControle", "Forward: direct \r\nBackward: direct");
+    setTextOtherPage("TxtMode2", "ModeControle", "Forward: inverted \r\nBackward: direct");
+    setTextOtherPage("TxtMode3", "ModeControle", "Forward: inverted \r\nBackward: inverted");
+    setTextOtherPage("TxtMode4", "ModeControle", "Forward: direct \r\nBackward: inverted");
+
+    setTextOtherPage("bStat", "debut", "Status: off");
+    setTextOtherPage("TxtPoign", "debut", "Handles");
+    setTextOtherPage("TxtPoids", "debut", "Weight perceived by user :");
+}
+void ResetEncodeurs(){
+  EncodeurVerinGauche.readAndReset();
+  EncodeurVerinDroit.readAndReset(); 
+  EncodeurRoueDroite.readAndReset();
+  EncodeurRoueGauche.readAndReset();
+}
+
+void setTextOtherPage(const char *object, const char *page, const char *buffer){
+  String cmd;
+  cmd = String(page) + "." + String(object) + ".txt=\"" + String(buffer) + "\"";
+    nexSerial.print(cmd);
+    nexSerial.write(0xFF);
+    nexSerial.write(0xFF);
+    nexSerial.write(0xFF);
 }

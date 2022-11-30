@@ -103,6 +103,7 @@ int eepromPoidsOffsetAddr = 0;
 int eepromCorrSecuriteVitesseAddr = 1;
 int eepromCorrDeviationAddr = 2;
 int eepromCorrAccelerationAddr = 3;
+bool eepromLangueAddr = 4;
 
 /*--- DÉPLACEMENT ---*/
 uint32_t CorrDeviation = 100;       // Correction de déviation
@@ -163,7 +164,7 @@ double output;              // Écart appliqué entre les PWMs des vérins gauch
 #define kpM 1.9                    // Coefficient proportionnel
 #define kdM 1.0                    // Coefficient dérivée
 #define outputMaxM 6               // Valeur maxi de output (anti windup)
-float eM = 0;                      // Erreur asservissement vérin (écart entre les compteurs effet Hall gauche vs droit)
+double eM = 0;                      // Erreur asservissement vérin (écart entre les compteurs effet Hall gauche vs droit)
 double lastErrorM_R, lastErrorM_L; // Buffer pour calcul de la dérivée
 double rateErrorM_R;  // Intégrale et dérivée du PID
 double rateErrorM_L;  // Intégrale et dérivée du PID
@@ -249,10 +250,13 @@ bool PremierChangementP3 = true;
 bool MsgObstruction = false;
 bool TempsDejaChange = false;
 int DernierTemps = 0;
+bool Langue = false; // true = anglais, false = français 
 #define TempsMaxMsgMaintien 10000
 #define TempsMaxMsgVitesse 10000
 #define TempsMaxMsgPoids 10000
 #define TempsMaxHorloge 30000
+#define FRANCAIS 0
+#define ANGLAIS 1
 RTC_DS3231 rtc;         // Objet pour l'horloge RTC
 DateTime now;           // Objet pour l'horloge RTC
 
@@ -285,6 +289,10 @@ NexButton msgbatterie = NexButton(0, 9, "msgbatterie"); // Message d'erreur pour
 NexPicture ImgNext = NexPicture(0, 41, "ImgNext");      // Image pour aller à la page secondaire (modes)
 NexNumber Heure = NexNumber(0, 49, "Heure");            // Heure
 NexNumber Minute = NexNumber(0, 51, "Minute");          // Minute
+NexVariable VarLangue = NexVariable(0, 52, "VarLangue"); // Variable qui indique la langue de l'écran
+NexText TxtPoign = NexText(0, 48, "TxtPoign");          // Texte qui indique le mode des poignées
+NexText TxtPoids = NexText(0, 19, "TxtPoids");          // Texte qui indique le mode des poignées
+
 
 NexProgressBar BatteryLevel = NexProgressBar(0, 7, "blevel"); // Barre de progression qui affiche le niveau de la batterie
 
@@ -301,6 +309,11 @@ NexButton bMode2 = NexButton(2, 6, "bMode2");       // Bouton pour activer le mo
 NexButton bMode3 = NexButton(2, 7, "bMode3");       // Bouton pour activer le mode 3 de contrôle des poignées
 NexButton bMode4 = NexButton(2, 8, "bMode4");       // Bouton pour activer le mode 4 de contrôle des poignées
 NexText MODE = NexText(2, 4, "MODE");               // Texte qui affiche le mode actuel de contrôle des poignées
+NexText TxtMode = NexText(2, 3, "TxtMode");         // Texte qui indique le mode des poignées
+NexText TxtMode1 = NexText(2, 5, "TxtMode1");       // Texte qui indique le mode 1 des poignées
+NexText TxtMode2 = NexText(2, 6, "TxtMode2");       // Texte qui indique le mode 2 des poignées
+NexText TxtMode3 = NexText(2, 7, "TxtMode3");       // Texte qui indique le mode 3 des poignées
+NexText TxtMode4 = NexText(2, 8, "TxtMode4");       // Texte qui indique le mode 4 des poignées
 
 // Page 3 (Réglages avancés)
 NexButton prev2 = NexButton(3, 12, "prev2");           // Bouton pour aller à la page principale
@@ -315,8 +328,21 @@ NexButton HeurePlus = NexButton(3, 24, "HeurePlus");   // Bouton pour augmenter 
 NexButton HeureMoins = NexButton(3, 25, "HeureMoins"); // Bouton pour diminuer l'heure
 NexButton MinutePlus = NexButton(3, 27, "MinutePlus"); // Bouton pour augmenter les minutes
 NexButton MinuteMoins = NexButton(3, 28, "MinuteMoins"); // Bouton pour diminuer les minutes
+NexButton LangueFr = NexButton(3, 29, "LangueFr"); // Bouton pour changer la langue en français
+NexButton LangueEn = NexButton(3, 30, "LangueEn"); // Bouton pour changer la langue en anglais
 NexNumber HeureP3 = NexNumber(3, 21, "HeureP3");         // Heure
 NexNumber MinuteP3 = NexNumber(3, 23, "MinuteP3");       // Minute
+NexText TxtReg = NexText(3, 8, "TxtReg");                // Texte qui indique le mode des poignées
+NexText TxtDev = NexText(3, 6, "TxtDev");                // Texte qui indique le mode des poignées
+NexText TxtAcc = NexText(3, 7, "TxtAcc");                // Texte qui indique le mode des poignées
+NexText TxtHor = NexText(3, 28, "TxtHor");           // Texte qui indique le mode des poignées
+NexText TxtGauche = NexText(3, 16, "TxtGauche");           // Texte qui indique le mode des poignées
+NexText TxtDroite = NexText(3, 17, "TxtDroite");           // Texte qui indique le mode des poignées
+NexText TxtLent = NexText(3, 14, "TxtLent");           // Texte qui indique le mode des poignées
+NexText TxtRapide = NexText(3, 15, "TxtRapide");           // Texte qui indique le mode des poignées
+NexText TxtMan = NexText(3, 11, "TxtMan");              // Texte qui indique le mode des poignées
+NexText TxtLangue = NexText(3, 31, "TxtLangue");           // Texte qui indique le mode des poignées
+
 
 
 // Array des objets Nextion à surveiller
@@ -354,6 +380,8 @@ NexTouch *nex_listen_list[] = {
     &SliderAcc,
     &HeurePlus,
     &HeureMoins,
+    &LangueFr,
+    &LangueEn,
     &MinutePlus,
     &MinuteMoins,
     NULL};
@@ -400,7 +428,6 @@ void fermerLED();      // Fermer toutes les LED
 
 /*--- ÉCRAN ---*/
 void checkMsg();
-void checkpage();
 void nextPopCallback(void *ptr);
 void next2PopCallback(void *ptr);
 void prevPopCallback(void *ptr);
@@ -426,8 +453,16 @@ void HeurePlusPopCallback(void *ptr);
 void HeureMoinsPopCallback(void *ptr);
 void MinutePlusPopCallback(void *ptr);
 void MinuteMoinsPopCallback(void *ptr);
+void LangueFrPopCallback(void *ptr);
+void LangueEnPopCallback(void *ptr);
 
 
 //Autre
 void LimiterDouble(double *nombre, int max);
 void LimiterInt(int *nombre, int max);
+void SetPinMode();
+void InitAnglaisHMI();
+void SetAttachPop();
+void ResetEncodeurs();
+
+void setTextOtherPage(const char *object, const char *page, const char *buffer);
