@@ -19,22 +19,20 @@ void setup()
   Wire.onReceive(receiveEvent);
 
   // //EEPROM
-  poidsOffset = 0; // EEPROM.read(eepromPoidsOffsetAddr) - 128; // Lecture EEPROM
-  CorrDeviation = EEPROM.read(eepromCorrDeviationAddr); // Lecture EEPROM
+  poidsOffset = 0;                                            // EEPROM.read(eepromPoidsOffsetAddr) - 128; // Lecture EEPROM
+  CorrDeviation = EEPROM.read(eepromCorrDeviationAddr);       // Lecture EEPROM
   CorrAcceleration = EEPROM.read(eepromCorrAccelerationAddr); // Lecture EEPROM
-  Langue = EEPROM.read(eepromLangueAddr); // Lecture EEPROM
-
-
+  Langue = EEPROM.read(eepromLangueAddr);                     // Lecture EEPROM
 
   // // Établit la liste des items Nextion à surveiller (items qui peuvent être appuyés) pour l'écran
   SetAttachPop();
-  
-  //nexInit(); // Initialisation de la librairie de l'Écran
+
+  // nexInit(); // Initialisation de la librairie de l'Écran
   bStat.setText("Statut: off");
-  if(Langue == ANGLAIS)
-     InitAnglaisHMI();
-  
-    // // Augmentation de la frequence PWM pour les moteurs et les verins
+  if (Langue == ANGLAIS)
+    InitAnglaisHMI();
+
+  // // Augmentation de la frequence PWM pour les moteurs et les verins
   TCCR2B = (TCCR2B & 0b11111000) | 0x01;
   TCCR3B = (TCCR3B & 0b11111000) | 0x01;
   TCCR4B = (TCCR4B & 0b11111000) | 0x01;
@@ -42,21 +40,20 @@ void setup()
   // // pinMode
   SetPinMode();
 
-
   // // Initialisation de l'horloge
   rtc.begin();
   now = rtc.now();
   delay(100);
-  Minute.setValue(now.minute());
-  Heure.setValue(now.hour());
+  setNexNumberOtherPage("Minute", "debut", now.minute());
+  setNexNumberOtherPage("Heure", "debut", now.hour());
 
   // // Initialisation du compteur des encodeurs quad, vérins
   ResetEncodeurs();
 
   // // Initialisation de la balance
-  scale.begin(dat, clk);    // Pins pour le Output des donnees et la Clock.
+  scale.begin(dat, clk); // Pins pour le Output des donnees et la Clock.
   scale.set_scale(5000); // Scale trouver apres la calibration des donnees
-  scale.tare();             // Mise à zéro de la pesée
+  scale.tare();          // Mise à zéro de la pesée
   scale.power_down();
   springCalc(); // Calcul des combinaisons de ressorts
 
@@ -69,27 +66,30 @@ void loop()
 
   /**** Mise à jour des PWM ****/
   if ((millis() - jerkTimer) > jerkTime)
-  { // limitation de la fréquence de m-à-j des PWMs
-    checkBatt();              //Vérification de l'état de la batterie
-    vitesseEncodeur();        // Vérifier la vitesse du Zénith
-    asserMoteurs();           // Asservissement des moteurs des roues
-    accelMoteurs();           // Accélération des moteurs des roues
-    verinManuel();            // Vérifier le signal du bouton manuel du vérin
-    consigneVerins();         // Calculer la consigne des vérins
-    accelVerin();             // Accélération des vérins
-    CommManette();            // Vérifier si la manette est en communication  
-    MAJ_PWM();                // M-à-j des PWMs
-    fermerLED();              // Fermer les LED si les poignées ne sont pas activées sur l'écran.
-    majHorloge();             // Mise à jour de l'horloge
-    Serial.println(analogRead(potd));
+  {                       // limitation de la fréquence de m-à-j des PWMs
+    checkBatt();          // Vérification de l'état de la batterie
+    vitesseEncodeur();    // Vérifier la vitesse du Zénith
+    asserMoteurs();       // Asservissement des moteurs des roues
+    accelMoteurs();       // Accélération des moteurs des roues
+    verinManuel();        // Vérifier le signal du bouton manuel du vérin
+    consigneVerins();     // Calculer la consigne des vérins
+    accelVerin();         // Accélération des vérins
+    CommManette();        // Vérifier si la manette est en communication
+    MAJ_PWM();            // M-à-j des PWMs
+    fermerLED();          // Fermer les LED si les poignées ne sont pas activées sur l'écran.
+    majHorloge();         // Mise à jour de l'horloge
+    jerkTimer = millis(); // Reset du timer
 
-    jerkTimer = millis();     // Reset du timer
   }
 
-  EncodeurRoueDroite.read(); //Améliorer la fiabilité de la mesure
-  EncodeurRoueGauche.read(); //Améliorer la fiabilité de la mesure
-  checkMsg();         // Enlever les messages superflus à l'écran après 10s d'apparition
-  SecuriteManette();  // MachineStop si la manette se déconnecte pendant une communication
+
+
+
+
+  EncodeurRoueDroite.read(); // Améliorer la fiabilité de la mesure
+  EncodeurRoueGauche.read(); // Améliorer la fiabilité de la mesure
+  checkMsg();                // Enlever les messages superflus à l'écran après 10s d'apparition
+  SecuriteManette();         // MachineStop si la manette se déconnecte pendant une communication
 } // fin loop
 
 //-------------------------------------------------------------------------------------------------------------
@@ -112,59 +112,71 @@ void Frein()
 void asserMoteurs()
 {
   //*** Vérification des consignes de vitesse ***//
-    if (signal_verin) // Si la manette est en communication
-    {
-      vitesseDesireeDroite = -coefVitesse * pwmD_Value / 255.0;
-      vitesseDesireeGauche = -coefVitesse * pwmG_Value / 255.0;
-    }
-    else if (activ_poignees == HIGH) // Sinon si les poignées sont activées
-    {
-      ContrlPoignees();
-    }
-    else // Sinon tout éteindre
-    {
-      vitesseDesireeDroite = 0;
-      vitesseDesireeGauche = 0;
-      PWMG = 0;
-      PWMD = 0;
-      return;
-    }
+  if (signal_verin) // Si la manette est en communication
+  {
+    vitesseDesireeDroite = -coefVitesse * pwmD_Value / 255.0;
+    vitesseDesireeGauche = -coefVitesse * pwmG_Value / 255.0;
+  }
+  else if (activ_poignees == HIGH) // Sinon si les poignées sont activées
+  {
+    ContrlPoignees();
+  }
+  else // Sinon tout éteindre
+  {
+    vitesseDesireeDroite = 0;
+    vitesseDesireeGauche = 0;
+    PWMG = 0;
+    PWMD = 0;
+    return;
+  }
 
   //*** PID pour côté droit ***//
-    eM = -vitesseDesireeDroite * ((float)CorrDeviation/100) + vitesseReelleDroite;
-    //LimiterDouble(&eM, abs(vitesseDesireeDroite));
-    rateErrorM_R = (eM - lastErrorM_R); // Dérivée
-    LimiterDouble(&rateErrorM_R, rateErrorMaxM);
+  eM = -vitesseDesireeDroite * ((float)CorrDeviation / 100) + vitesseReelleDroite;
+  if(abs(eM) > abs(vitesseDesireeDroite))
+  {
+    if(eM > 0)
+      eM = abs(vitesseDesireeDroite);
+    else
+      eM = -abs(vitesseDesireeDroite);
+  }
+  rateErrorM_R = (eM - lastErrorM_R); // Dérivée
+  LimiterDouble(&rateErrorM_R, rateErrorMaxM);
 
-    outputM = kpM * eM + kdM * rateErrorM_R; // PID output
-    LimiterDouble(&outputM, outputMaxM);
-    PWMD += outputM ;
-    lastErrorM_R = eM; // Remember current error
+  outputM = kpM * eM + kdM * rateErrorM_R; // PID output
+  LimiterDouble(&outputM, outputMaxM);
+  PWMD += outputM;
+  lastErrorM_R = eM; // Remember current error
 
-    if (abs(vitesseDesireeDroite) < 0.05)  //Ajouter une deadzone
-      PWMD = 0;
-    if (vitesseDesireeDroite > 0.1 && PWMD > -PWM_MIN && PWMD < 0) //Améliorer l'acceleration à basse vitesse 
-      PWMD = -PWM_MIN;
-    else if (vitesseDesireeDroite < -0.1 && PWMD < PWM_MIN && PWMD > 0) //Améliorer l'acceleration à basse vitesse (marche arrière)
-      PWMD = PWM_MIN;
+  if (abs(vitesseDesireeDroite) < 0.05) // Ajouter une deadzone
+    PWMD = 0;
+  if (vitesseDesireeDroite > 0.1 && PWMD > -PWM_MIN && PWMD < 0) // Améliorer l'acceleration à basse vitesse
+    PWMD = -PWM_MIN;
+  else if (vitesseDesireeDroite < -0.1 && PWMD < PWM_MIN && PWMD > 0) // Améliorer l'acceleration à basse vitesse (marche arrière)
+    PWMD = PWM_MIN;
 
   //*** PID pour côté gauche ***//
-    eM = -vitesseDesireeGauche + vitesseReelleGauche;
-    //LimiterDouble(&eM, abs(vitesseDesireeGauche));
-    rateErrorM_L = (eM - lastErrorM_L); // Dérivée
-    LimiterDouble(&rateErrorM_L, rateErrorMaxM);
+  eM = -vitesseDesireeGauche + vitesseReelleGauche;
+  if(abs(eM) > abs(vitesseDesireeGauche))
+  {
+    if(eM > 0)
+      eM = abs(vitesseDesireeGauche);
+    else
+      eM = -abs(vitesseDesireeGauche);
+  }
+  rateErrorM_L = (eM - lastErrorM_L); // Dérivée
+  LimiterDouble(&rateErrorM_L, rateErrorMaxM);
 
-    outputM = kpM * eM + kdM * rateErrorM_L; // PID output
-    LimiterDouble(&outputM, outputMaxM);
-    PWMG += outputM;
-    lastErrorM_L = eM; // Remember current error
+  outputM = kpM * eM + kdM * rateErrorM_L; // PID output
+  LimiterDouble(&outputM, outputMaxM);
+  PWMG += outputM;
+  lastErrorM_L = eM; // Remember current error
 
-    if (abs(vitesseDesireeGauche) < 0.05) //Ajouter une deadzone
-      PWMG = 0;
-    if (vitesseDesireeGauche > 0.1 && PWMG > -10 && PWMG < 0) //Améliorer l'acceleration à basse vitesse
-      PWMG = -10;
-    else if (vitesseDesireeGauche < -0.1 && PWMG < 10 && PWMG > 0) //Améliorer l'acceleration à basse vitesse (marche arrière)
-      PWMG = 10;
+  if (abs(vitesseDesireeGauche) < 0.05) // Ajouter une deadzone
+    PWMG = 0;
+  if (vitesseDesireeGauche > 0.1 && PWMG > -10 && PWMG < 0) // Améliorer l'acceleration à basse vitesse
+    PWMG = -10;
+  else if (vitesseDesireeGauche < -0.1 && PWMG < 10 && PWMG > 0) // Améliorer l'acceleration à basse vitesse (marche arrière)
+    PWMG = 10;
 
 } // Fin asserMoteurs
 void accelMoteurs()
@@ -228,8 +240,8 @@ void vitesseEncodeur()
   //*** Vitesse côté gauche ***//
   tempsAcquisitionGauche = millis() - ancienTempsAcquisitionGauche;
   ancienTempsAcquisitionGauche = millis();
-  pulseParcouruGauche = - EncodeurRoueGauche.read() - ancienPulseGauche;
-  ancienPulseGauche = - EncodeurRoueGauche.read();
+  pulseParcouruGauche = -EncodeurRoueGauche.read() - ancienPulseGauche;
+  ancienPulseGauche = -EncodeurRoueGauche.read();
   vitesseReelleGauche = (pulseParcouruGauche * 6.283185 * rayonRoue / (phaseEncodeurRoue * tempsAcquisitionGauche / 1000)) * M_S_TO_KM_H; // Vitesse en km/h
 }
 void MAJ_PWM()
@@ -255,7 +267,7 @@ void peserPatient()
 }
 void asserVerins()
 {
-  //Vérifier nécessité de eMin
+  // Vérifier nécessité de eMin
   e = -(float)EncodeurVerinGauche.read() + (float)EncodeurVerinDroit.read();
   rateError = (e - lastError); // Dérivée
   LimiterDouble(&rateError, rateErrorMax);
@@ -277,10 +289,8 @@ void asserVerins()
       PWMVD -= PWMVG - liftCoef;
       PWMVG = liftCoef;
     }
-
   }
 
-  
 } // Fin asserVerins
 void consigneVerins()
 {
@@ -291,7 +301,7 @@ void consigneVerins()
   }
 
   // Vérification des limit switch et changement du PWM en conséquence
-  if (analogRead(LMTBG) > 100) //(digitalRead(LMTBG) == HIGH)
+  if (digitalRead(LMTBG) == HIGH)
   {
     EncodeurVerinGauche.readAndReset(); // Reset de l'encodeur si la limite est atteinte
     if (PWMVG > 0)
@@ -309,7 +319,7 @@ void consigneVerins()
       PWM_VD_reel = 0;
     }
   }
-  if  (analogRead(LMTHG) > 100)//(digitalRead(LMTHG) == HIGH)
+  if (digitalRead(LMTHG) == HIGH)
   {
     if (PWMVG < 0)
     {
@@ -347,25 +357,25 @@ void accelVerin()
     digitalWrite(dvd, LOW);
   else
     digitalWrite(dvd, HIGH);
-    
+
 } // Fin accelVerin
 void verinManuel()
 {
   if (!signal_verin) // Si la manette n'est pas en communication
   {
     int btnmanuel = analogRead(updn);
-    if (btnmanuel <= 100) //UpDn Pas appuyé
+    if (btnmanuel <= 100) // UpDn Pas appuyé
     {
-        PWMVG = 0;
-        PWMVD = 0;
+      PWMVG = 0;
+      PWMVD = 0;
     }
-    else if (btnmanuel > 300 && btnmanuel < 700) //UpDn vers le bas
+    else if (btnmanuel > 300 && btnmanuel < 700) // UpDn vers le bas
     {
       PWMVG = liftCoef;
       PWMVD = liftCoef;
       Serial.println("down");
     }
-    else if( btnmanuel >= 1000) //UpDn vers le haut
+    else if (btnmanuel >= 1000) // UpDn vers le haut
     {
       PWMVG = -liftCoef;
       PWMVD = -liftCoef;
@@ -471,10 +481,10 @@ void lmtWait(int lap)
     if (digitalRead(lmt) == HIGH)
     {
       Serial.println("Err. Obstruction Soudaine Fourchette");
-      if(Langue == FRANCAIS)
-        msgmaintien.setText("Obstruction soudaine : tenir le ceintre pendant toute la configuration");
-      else if(Langue == ANGLAIS)
-        msgmaintien.setText("Sudden obstruction : hold the harness during the whole configuration");
+      if (Langue == FRANCAIS)
+        msgmaintien.setText("Obstruction soudaine : tenir le ceintre pendant toute la calibration");
+      else if (Langue == ANGLAIS)
+        msgmaintien.setText("Sudden obstruction : hold the harness during the whole calibration");
       MsgObstruction = true;
       break;
     }
@@ -530,24 +540,23 @@ void setFourchette()
   else
   {
     Serial.println("Err. Obstruction Fourchette");
-    if(Langue == FRANCAIS)
+    if (Langue == FRANCAIS)
       msgmaintien.setText("Obstruction : soulever le ceintre et essayer de nouveau");
-    else if(Langue == ANGLAIS)
+    else if (Langue == ANGLAIS)
       msgmaintien.setText("Obstruction : lift the harness and try again");
     MsgObstruction = true;
   }
   digitalWrite(mag, LOW);
 
-
   timerMsgMaintien = millis();
   boolMsgMaintien = true;
 
-  if(!MsgObstruction)
+  if (!MsgObstruction)
   {
-    if(Langue == FRANCAIS)
-      msgmaintien.setText("Configuration terminee");
-    else if(Langue == ANGLAIS)
-      msgmaintien.setText("Configuration finished");
+    if (Langue == FRANCAIS)
+      msgmaintien.setText("Calibration terminee");
+    else if (Langue == ANGLAIS)
+      msgmaintien.setText("Calibration finished");
   }
   MsgObstruction = false;
 
@@ -559,65 +568,65 @@ void checkBatt()
   if ((millis() - battTimer) > battDelay)
   { // limitation de la fréquence de m-à-j de la charge
 
-  if ((PWMG_reel + PWMD_reel + PWM_VG_reel + PWM_VD_reel) == 0)
-  {
-    battSum = 0;
-    batt[battPos % battSize] = analogRead(bat);
-    for (int i = 0; i < battSize; i++)
+    if ((PWMG_reel + PWMD_reel + PWM_VG_reel + PWM_VD_reel) == 0)
     {
-      battSum += batt[i];
-    }
-    if (battPos > 2 * battSize)
-    {
-      battDelay = 10000;
-      battAverage = battSum / battSize;
-      battAverage = 75 / (battLevelNintyfivePc - battLevelTwentyPc) * (battAverage - battLevelTwentyPc) + 20;
-      if (battAverage > (battLevel + 1))
+      battSum = 0;
+      batt[battPos % battSize] = analogRead(bat);
+      for (int i = 0; i < battSize; i++)
       {
-        battErr++;
-        if (battErr > 3)
+        battSum += batt[i];
+      }
+      if (battPos > 2 * battSize)
+      {
+        battDelay = 10000;
+        battAverage = battSum / battSize;
+        battAverage = 75 / (battLevelNintyfivePc - battLevelTwentyPc) * (battAverage - battLevelTwentyPc) + 20;
+        if (battAverage > (battLevel + 1))
         {
-          battErr = 3;
+          battErr++;
+          if (battErr > 3)
+          {
+            battErr = 3;
+          }
         }
+        else
+        {
+          battErr = 0;
+        }
+        if (((battAverage < battLevel) || (battErr == 3)) && (battAverage >= 20) && (battAverage <= 90))
+        { // Charge approximative
+          battLevel = battAverage * 1.1;
+        }
+        else if (((battAverage < battLevel) || (battErr == 3)) && (battAverage >= 90))
+        { // Batterie pleine charge
+          battLevel = 100;
+        }
+        else if (battAverage < -75)
+        { // Niveau critique !!!
+          battLevel = 5;
+          Serial.println("Batterie niveau critique !");
+          if (Langue == FRANCAIS)
+            msgbatterie.setText("Niveau de charge critque");
+          else if (Langue == ANGLAIS)
+            msgbatterie.setText("Critical charge level");
+        }
+        else if (battAverage < -20)
+        { // Charger la batterie
+          battLevel = 10;
+          if (Langue == FRANCAIS)
+            msgbatterie.setText("Charger la batterie");
+          else if (Langue == ANGLAIS)
+            msgbatterie.setText("Charge the battery");
+        }
+        else if ((battAverage < battLevel) || (battErr == 3))
+        {
+          battLevel = 15;
+        }
+        BatteryLevel.setValue(battLevel);
       }
-      else
-      {
-        battErr = 0;
-      }
-      if (((battAverage < battLevel) || (battErr == 3)) && (battAverage >= 20) && (battAverage <= 90))
-      { // Charge approximative
-        battLevel = battAverage * 1.1;
-      }
-      else if (((battAverage < battLevel) || (battErr == 3)) && (battAverage >= 90))
-      { // Batterie pleine charge
-        battLevel = 100;
-      }
-      else if (battAverage < -75)
-      { // Niveau critique !!!
-        battLevel = 5;
-        Serial.println("Batterie niveau critique !");
-        if(Langue == FRANCAIS)
-          msgbatterie.setText("Niveau de charge critque");
-        else if(Langue == ANGLAIS)
-          msgbatterie.setText("Critical charge level");
-      }
-      else if (battAverage < -20)
-      { // Charger la batterie
-        battLevel = 10;
-        if(Langue == FRANCAIS)
-          msgbatterie.setText("Charger la batterie");
-        else if(Langue == ANGLAIS)
-          msgbatterie.setText("Charge the battery");
-      }
-      else if ((battAverage < battLevel) || (battErr == 3))
-      {
-        battLevel = 15;
-      }
-      BatteryLevel.setValue(battLevel);
+      battPos++;
     }
-    battPos++;
-  }
-  battTimer = millis();
+    battTimer = millis();
   }
 } // Fin checkBatt
 
@@ -627,11 +636,11 @@ void traitementDonnesManette(String data)
   signal_verin = (data.substring(0, 1)).toInt();
   signal_x = map((data.substring(1, 5)).toInt(), 1000, 2024, 255, -255);
   signal_y = map((data.substring(5, 9)).toInt(), 1000, 2024, 255, -255);
-  signal_Joystick = (data.substring(9, 10)).toInt();  // Bouton joystick non appuyé == 1 , appuyé == 0
-  
-  if (signal_Joystick == 1)  
+  signal_Joystick = (data.substring(9, 10)).toInt(); // Bouton joystick non appuyé == 1 , appuyé == 0
+
+  if (signal_Joystick == 1)
   {
-    signal_Joystick = 0;                  // Bouton joystick non appuyé == 0 , appuyé == 1
+    signal_Joystick = 0; // Bouton joystick non appuyé == 0 , appuyé == 1
   }
   else
   {
@@ -661,42 +670,41 @@ void traitementDonnesManette(String data)
     pwmD_Value = pwmD_Value / 1.75;
   }
 
-
-if(signal_Joystick == 0)
-{
-  DescenteRapideVerin();
-
-  if (signal_verin == 1)
-  { // AUCUNE COMMANDE DE VERIN
-    PWMVG = 0;
-    PWMVD = 0;
-  }
-  else if (signal_verin == 2)
-  { // VERIN UP
-    PWMD = 0;
-    PWMG = 0;
-    PWMVG = -liftCoef;
-    PWMVD = -liftCoef;
-    DescenteRapide = false;
-    // Serial.println("UP");
-  }
-  else if (signal_verin == 3)
-  { // VERIN DOWN
-    PWMD = 0;
-    PWMG = 0;
-    PWMVG = liftCoef;
-    PWMVD = liftCoef;
-    // Serial.println("DOWN");
-  }
-
-  if (DescenteRapide)
+  if (signal_Joystick == 0)
   {
-    PWMD = 0;
-    PWMG = 0;
-    PWMVG = liftCoef;
-    PWMVD = liftCoef;
+    DescenteRapideVerin();
+
+    if (signal_verin == 1)
+    { // AUCUNE COMMANDE DE VERIN
+      PWMVG = 0;
+      PWMVD = 0;
+    }
+    else if (signal_verin == 2)
+    { // VERIN UP
+      PWMD = 0;
+      PWMG = 0;
+      PWMVG = -liftCoef;
+      PWMVD = -liftCoef;
+      DescenteRapide = false;
+      // Serial.println("UP");
+    }
+    else if (signal_verin == 3)
+    { // VERIN DOWN
+      PWMD = 0;
+      PWMG = 0;
+      PWMVG = liftCoef;
+      PWMVD = liftCoef;
+      // Serial.println("DOWN");
+    }
+
+    if (DescenteRapide)
+    {
+      PWMD = 0;
+      PWMG = 0;
+      PWMVG = liftCoef;
+      PWMVD = liftCoef;
+    }
   }
-}
   if (signal_verin == 0)
   { // FIN DE LA COMMUNICATION
     manette_en_cours = false;
@@ -747,25 +755,25 @@ void receiveEvent(int howMany)
 void SecuriteManette()
 {
 
-  if( millis() - DerniereComm > TempsSansCommMax && signal_verin != 0)
+  if (millis() - DerniereComm > TempsSansCommMax && signal_verin != 0)
   {
     while (millis() - DerniereComm > TempsSansCommMax && signal_verin != 0)
     {
-    machine_stop();
-    CommManette();
+      machine_stop();
+      CommManette();
 
-    Serial.println("    PERTE DE COMMUNICATION AVEC LA MANETTE");
-    if(Langue == FRANCAIS)
+      Serial.println("    PERTE DE COMMUNICATION AVEC LA MANETTE");
+      if (Langue == FRANCAIS)
       {
-      msgErreur.setText("Erreur: ");
-      msgDisManette.setText("Manette deconnectee");
+        msgErreur.setText("Erreur: ");
+        msgDisManette.setText("Manette deconnectee");
       }
-    else if(Langue == ANGLAIS)
+      else if (Langue == ANGLAIS)
       {
-      msgErreur.setText("Error: ");
-      msgDisManette.setText("Remote disconnected");
+        msgErreur.setText("Error: ");
+        msgDisManette.setText("Remote disconnected");
       }
-    delay(50);
+      delay(50);
     }
     msgErreur.setText(" ");
     msgDisManette.setText(" ");
@@ -773,32 +781,34 @@ void SecuriteManette()
 }
 void ChangementVitesseManette()
 {
-    if (signal_verin == 2 && coefVitesse < 4.5 && millis()-TempsChangementVitesse > 175){
-      coefVitesse += 0.25;
-      speedcoef = coefVitesse*100;
-      PWM_MAX = 30+45*coefVitesse;
-      Vitesse.setValue(speedcoef);
-      VitesseFloat.setValue(speedcoef);
-      TempsChangementVitesse = millis();
-    }
-    else if (signal_verin == 3 && coefVitesse > 0 && millis()-TempsChangementVitesse > 175){
-      coefVitesse -= 0.25;
-      speedcoef = coefVitesse*100;
-      PWM_MAX = 30+45*coefVitesse;
-      Vitesse.setValue(speedcoef);
-      VitesseFloat.setValue(speedcoef);
-      TempsChangementVitesse = millis();
-    }
+  if (signal_verin == 2 && coefVitesse < 4.0 && millis() - TempsChangementVitesse > 175)
+  {
+    coefVitesse += 0.25;
+    speedcoef = coefVitesse * 100;
+    PWM_MAX = 30 + 45 * coefVitesse;
+    Vitesse.setValue(speedcoef);
+    VitesseFloat.setValue(speedcoef);
+    TempsChangementVitesse = millis();
+  }
+  else if (signal_verin == 3 && coefVitesse > 0 && millis() - TempsChangementVitesse > 175)
+  {
+    coefVitesse -= 0.25;
+    speedcoef = coefVitesse * 100;
+    PWM_MAX = 30 + 45 * coefVitesse;
+    Vitesse.setValue(speedcoef);
+    VitesseFloat.setValue(speedcoef);
+    TempsChangementVitesse = millis();
+  }
 }
 void DescenteRapideVerin()
 {
-  if(signal_verin == 3)
+  if (signal_verin == 3)
     DescenteTimer1 = millis();
 
-  if(signal_verin == 1 && (millis() - DescenteTimer1) < 500)
+  if (signal_verin == 1 && (millis() - DescenteTimer1) < 500)
     DescenteTimer2 = millis();
 
-  if(signal_verin == 3 && (millis() - DescenteTimer2) < 500)
+  if (signal_verin == 3 && (millis() - DescenteTimer2) < 500)
     DescenteRapide = true;
 }
 
@@ -807,18 +817,20 @@ void ContrlPoignees()
 {
   // Lecture des gachettes aux poignées (potentiomètre). Plage de conversion entre 610-350 pour gauche et 900-670 (branché à l'envers) pour s'adapter à la rotation limitée des gachettes. Finit à 100/970 (et non 0/1023)
   // pour éviter des signaux parasites si la gachette n'est pas parfaitement dépressée.
-  pwmg = map(analogRead(potg), 160, 32, 0, 255);
+  pwmg = map(analogRead(potg), 160, 35, 0, 255);
   if (pwmg < 50) // Si la valeur du potentiomètre sort de la plage
     pwmg = 0;
   else if (pwmg > 255)
     pwmg = 255;
 
-  pwmd = map(analogRead(potd), 135, 300, 0, 255);
+  pwmd = map(analogRead(potd), 170, 345, 0, 255);
   if (pwmd < 50) // Si la valeur du potentiomètre sort de la plage
     pwmd = 0;
   else if (pwmd > 255)
     pwmd = 255;
 
+  // Serial.print("      ");
+  // Serial.println(pwmd);
 
   if (abs(pwmg - pwmd) < 15) // Faire avancer le Zénith plus droit
     pwmg = pwmd;
@@ -881,16 +893,16 @@ void ContrlPoignees()
   }
   else if (mode == SOLIDAIRE)
   {
-    
+
     digitalWrite(LEDB, LOW);
     digitalWrite(LEDV, HIGH);
 
     if (dir == AVANT)
       pwm_min = min(pwmg, pwmd); // Mode solidaire contrôle les deux roues à la même vitesse selon la gâchette la moins pressée.
-    else 
+    else
       pwm_min = max(pwmg, pwmd); // Mode solidaire contrôle les deux roues à la même vitesse selon la gâchette la moins pressée.
-     
-                               // Adapté pour les patients hémiplégiques (moitié gauche/droite du corps avec moins de contrôle moteur et/ou force).
+
+    // Adapté pour les patients hémiplégiques (moitié gauche/droite du corps avec moins de contrôle moteur et/ou force).
     vitesseDesireeGauche = ((float)pwm_min / 255.0 * coefVitesse);
     vitesseDesireeDroite = ((float)pwm_min / 255.0 * coefVitesse);
   }
@@ -910,10 +922,10 @@ void fermerLED()
 {
   if (activ_poignees == LOW) // Lit seulement les valeurs PWM des poignées si les poignées sont activées sur l'écran.
   {
-  digitalWrite(LEDB, LOW);
-  digitalWrite(LEDR, LOW);
-  digitalWrite(LEDV, LOW);
-  digitalWrite(LEDJ, LOW);
+    digitalWrite(LEDB, LOW);
+    digitalWrite(LEDR, LOW);
+    digitalWrite(LEDV, LOW);
+    digitalWrite(LEDJ, LOW);
   }
   else
   {
@@ -944,23 +956,22 @@ void fermerLED()
 void checkMsg()
 {
   if (millis() - timerMsgMaintien > TempsMaxMsgMaintien && boolMsgMaintien)
-    {
-      msgmaintien.setText(" ");
-      boolMsgMaintien = false;
-    }
+  {
+    msgmaintien.setText(" ");
+    boolMsgMaintien = false;
+  }
 
   if (millis() - timerMsgVitesse > TempsMaxMsgVitesse && boolMsgVitesse)
-    {
-      msgvitesse.setText(" ");
-      boolMsgVitesse = false;
-    }
+  {
+    msgvitesse.setText(" ");
+    boolMsgVitesse = false;
+  }
 
   if (millis() - timerMsgPoids > TempsMaxMsgPoids && boolMsgPoids)
-    {
-      msgpoids.setText(" ");
-      boolMsgPoids = false;
-    }
-
+  {
+    msgpoids.setText(" ");
+    boolMsgPoids = false;
+  }
 }
 void nextPopCallback(void *ptr)
 {
@@ -989,7 +1000,6 @@ void nextPopCallback(void *ptr)
   {
     Serial.println("Erreur nextPopCallback");
   }
-
 
   Serial.println("nextPopCallback");
   npage = 2;
@@ -1024,7 +1034,7 @@ void prevPopCallback(void *ptr)
 
   Serial.println("prevPopCallback");
   npage = 0;
-  //delay(200);
+  // delay(200);
 }
 void prev2PopCallback(void *ptr)
 {
@@ -1056,16 +1066,16 @@ void prev2PopCallback(void *ptr)
     Serial.println("Erreur nextPopCallback");
   }
 
-  //delay(200);
+  // delay(200);
 }
 void majMaintienPopCallback(void *ptr)
 {
   if (wheelstopped)
   {
     Serial.println("Sequence fourchette");
-    if(Langue == FRANCAIS)
+    if (Langue == FRANCAIS)
       msgmaintien.setText("Calibration en cours...");
-    else if(Langue == ANGLAIS)
+    else if (Langue == ANGLAIS)
       msgmaintien.setText("Calibration in progress...");
     PoucMaintien.getValue(&pcmaintien);
     calcPoids();
@@ -1075,9 +1085,9 @@ void majMaintienPopCallback(void *ptr)
   else
   {
     Serial.println("Err. Freins releves !");
-    if(Langue == FRANCAIS)
+    if (Langue == FRANCAIS)
       msgmaintien.setText("Erreur. Freins actifs !");
-    else if(Langue == ANGLAIS)
+    else if (Langue == ANGLAIS)
       msgmaintien.setText("Error. Brakes activated !");
   }
 }
@@ -1085,14 +1095,13 @@ void majVitessePopCallback(void *ptr)
 {
   Vitesse.getValue(&speedcoef);
   coefVitesse = (float)speedcoef / 100.0;
-  PWM_MAX = 30+45*coefVitesse;
-
+  PWM_MAX = 30 + 45 * coefVitesse;
 
   timerMsgVitesse = millis();
   boolMsgVitesse = true;
-  if(Langue == FRANCAIS)
+  if (Langue == FRANCAIS)
     msgvitesse.setText("La vitesse a ete mise a jour");
-  else if(Langue == ANGLAIS)
+  else if (Langue == ANGLAIS)
     msgvitesse.setText("Speed updated");
 }
 void okPopCallback(void *ptr)
@@ -1100,7 +1109,7 @@ void okPopCallback(void *ptr)
   chr[0] = 0;
   Serial.print("ok ");
   delay(500);
-  //checkpage();
+  // checkpage();
   memset(chr, 0, 3);
   poidspatient.getText(chr, 3);
   Serial.println(npage);
@@ -1124,9 +1133,9 @@ void okPopCallback(void *ptr)
 }
 void balancePopCallback(void *ptr)
 {
-  if(Langue == FRANCAIS)
+  if (Langue == FRANCAIS)
     msgpoids.setText("Pesee en cours...");
-  else if(Langue == ANGLAIS)
+  else if (Langue == ANGLAIS)
     msgpoids.setText("Weighing in progress...");
 
   chr[0] = 0;
@@ -1135,16 +1144,16 @@ void balancePopCallback(void *ptr)
   if (POIDS < 1)
   {
     POIDS = 0;
-    if(Langue == FRANCAIS)
+    if (Langue == FRANCAIS)
       msgpoids.setText("Erreur : poids negatif");
-    else if(Langue == ANGLAIS)
+    else if (Langue == ANGLAIS)
       msgpoids.setText("Error : negative weight");
   }
   else
   {
-    if(Langue == FRANCAIS)
+    if (Langue == FRANCAIS)
       msgpoids.setText("Pesee terminee");
-    else if(Langue == ANGLAIS)
+    else if (Langue == ANGLAIS)
       msgpoids.setText("Weighing finished");
   }
   timerMsgPoids = millis();
@@ -1155,17 +1164,17 @@ void balancePopCallback(void *ptr)
 }
 void bOnPopCallback(void *ptr)
 {
-  if(Langue == FRANCAIS)
+  if (Langue == FRANCAIS)
     bStat.setText("Statut: on");
-  else if(Langue == ANGLAIS)
+  else if (Langue == ANGLAIS)
     bStat.setText("Status: on");
   activ_poignees = HIGH;
 }
 void bOffPopCallback(void *ptr)
 {
-  if(Langue == FRANCAIS)
+  if (Langue == FRANCAIS)
     bStat.setText("Statut: off");
-  else if(Langue == ANGLAIS)
+  else if (Langue == ANGLAIS)
     bStat.setText("Status: off");
   activ_poignees = LOW;
   pwmg = 0;
@@ -1241,7 +1250,8 @@ void pAccPopCallback(void *ptr)
   Serial.print("Acceleration: ");
   Serial.println(CorrAcceleration);
 }
-void majHorloge(){
+void majHorloge()
+{
   now = rtc.now();
 
   if (now.second() == 0 && !TempsDejaChange && (now.second() - DernierTemps == 1 || now.second() - DernierTemps == 0 || DernierTemps - now.second() == 59))
@@ -1267,7 +1277,6 @@ void HeurePlusPopCallback(void *ptr)
     Heure.setValue(now.hour());
     HeureP3.setValue(now.hour());
   }
-
 }
 void HeureMoinsPopCallback(void *ptr)
 {
@@ -1304,17 +1313,18 @@ void MinuteMoinsPopCallback(void *ptr)
     Minute.setValue(now.minute());
   }
 }
-void LangueFrPopCallback(void *ptr){
+void LangueFrPopCallback(void *ptr)
+{
   Langue = FRANCAIS;
   EEPROM.write(eepromLangueAddr, Langue);
 }
-void LangueEnPopCallback(void *ptr){
+void LangueEnPopCallback(void *ptr)
+{
   Langue = ANGLAIS;
   EEPROM.write(eepromLangueAddr, Langue);
 }
 
-
-//Autres fonctions
+// Autres fonctions
 void LimiterDouble(double *nombre, int max)
 {
   if (*nombre < -max)
@@ -1329,7 +1339,8 @@ void LimiterInt(int *nombre, int max)
   else if (*nombre > max)
     *nombre = max;
 }
-void SetPinMode(){
+void SetPinMode()
+{
   pinMode(mg, OUTPUT);
   pinMode(md, OUTPUT);
   pinMode(bkd, OUTPUT);
@@ -1356,8 +1367,17 @@ void SetPinMode(){
   pinMode(LEDJ, OUTPUT);
   pinMode(LEDR, OUTPUT);
   pinMode(LEDV, OUTPUT);
+  pinMode(EVGA, INPUT_PULLUP);
+  pinMode(EVGB, INPUT_PULLUP);
+  pinMode(EVDA, INPUT_PULLUP);
+  pinMode(EVDB, INPUT_PULLUP);
+  pinMode(ERDA, INPUT_PULLUP);
+  pinMode(ERDB, INPUT_PULLUP);
+  pinMode(ERGA, INPUT_PULLUP);
+  pinMode(ERGB, INPUT_PULLUP);
 }
-void SetAttachPop(){
+void SetAttachPop()
+{
   majMaintien.attachPop(majMaintienPopCallback, &majMaintien);
   majVitesse.attachPop(majVitessePopCallback, &majVitesse);
   ok.attachPop(okPopCallback, &ok);
@@ -1378,6 +1398,8 @@ void SetAttachPop(){
   bMode4.attachPop(bMode4PopCallback, &bMode4);
   SliderDev.attachPop(SliderDevPopCallback, &SliderDev);
   SliderAcc.attachPop(SliderAccPopCallback, &SliderAcc);
+  pAcc.attachPop(pAccPopCallback, &pAcc);
+  pDev.attachPop(pDevPopCallback, &pDev);
   HeurePlus.attachPop(HeurePlusPopCallback, &HeurePlus);
   HeureMoins.attachPop(HeureMoinsPopCallback, &HeureMoins);
   MinutePlus.attachPop(MinutePlusPopCallback, &MinutePlus);
@@ -1385,43 +1407,65 @@ void SetAttachPop(){
   LangueFr.attachPop(LangueFrPopCallback, &LangueFr);
   LangueEn.attachPop(LangueEnPopCallback, &LangueEn);
 }
-void InitAnglaisHMI(){
+void InitAnglaisHMI()
+{
 
-       setTextOtherPage("TxtReg", "Reglages", "Settings");
-        setTextOtherPage("TxtHor", "Reglages", "Clock");
-        setTextOtherPage("TxtDev", "Reglages", "Deviation");
-        setTextOtherPage("TxtAcc", "Reglages", "Acceleration");
-        setTextOtherPage("TxtMan", "Reglages", "See user manual \r\nbefore making changes");
-        setTextOtherPage("TxtLent", "Reglages", "Slow");
-        setTextOtherPage("TxtRapide", "Reglages", "Fast");
-        setTextOtherPage("TxtGauche", "Reglages", "Left");
-        setTextOtherPage("TxtDroite", "Reglages", "Right");
-        setTextOtherPage("TxtLangue", "Reglages", "Language");
-    
+  setTextOtherPage("TxtReg", "Reglages", "Settings");
+  setTextOtherPage("TxtHor", "Reglages", "Clock");
+  setTextOtherPage("TxtDev", "Reglages", "Deviation");
+  setTextOtherPage("TxtAcc", "Reglages", "Acceleration");
+  setTextOtherPage("TxtMan", "Reglages", "See user manual \r\nbefore making changes");
+  setTextOtherPage("TxtLent", "Reglages", "Slow");
+  setTextOtherPage("TxtRapide", "Reglages", "Fast");
+  setTextOtherPage("TxtGauche", "Reglages", "Left");
+  setTextOtherPage("TxtDroite", "Reglages", "Right");
+  setTextOtherPage("TxtLangue", "Reglages", "Language");
 
+  setTextOtherPage("TxtMode", "ModeControle", "Actual mode: ");
+  setTextOtherPage("TxtMode1", "ModeControle", "Forward: direct \r\nBackward: direct");
+  setTextOtherPage("TxtMode2", "ModeControle", "Forward: inverted \r\nBackward: direct");
+  setTextOtherPage("TxtMode3", "ModeControle", "Forward: inverted \r\nBackward: inverted");
+  setTextOtherPage("TxtMode4", "ModeControle", "Forward: direct \r\nBackward: inverted");
 
-    setTextOtherPage("TxtMode", "ModeControle", "Actual mode: ");
-    setTextOtherPage("TxtMode1", "ModeControle", "Forward: direct \r\nBackward: direct");
-    setTextOtherPage("TxtMode2", "ModeControle", "Forward: inverted \r\nBackward: direct");
-    setTextOtherPage("TxtMode3", "ModeControle", "Forward: inverted \r\nBackward: inverted");
-    setTextOtherPage("TxtMode4", "ModeControle", "Forward: direct \r\nBackward: inverted");
+  setTextOtherPage("bStat", "debut", "Status: off");
+  setTextOtherPage("TxtPoign", "debut", "Handles");
+  setTextOtherPage("TxtPoids", "debut", "Weight perceived by user :");
 
-    setTextOtherPage("bStat", "debut", "Status: off");
-    setTextOtherPage("TxtPoign", "debut", "Handles");
-    setTextOtherPage("TxtPoids", "debut", "Weight perceived by user :");
+  String cmd;
+  cmd = "Reglages.LangueFr.bco=51200"; // couleur rouge pour bouton langue fr
+  nexSerial.print(cmd);
+  nexSerial.write(0xFF);
+  nexSerial.write(0xFF);
+  nexSerial.write(0xFF);
+
+  cmd = "Reglages.LangueEn.bco=3463"; // couleur verte pour bouton langue en
+  nexSerial.print(cmd);
+  nexSerial.write(0xFF);
+  nexSerial.write(0xFF);
+  nexSerial.write(0xFF);
 }
-void ResetEncodeurs(){
+void ResetEncodeurs()
+{
   EncodeurVerinGauche.readAndReset();
-  EncodeurVerinDroit.readAndReset(); 
+  EncodeurVerinDroit.readAndReset();
   EncodeurRoueDroite.readAndReset();
   EncodeurRoueGauche.readAndReset();
 }
-
-void setTextOtherPage(const char *object, const char *page, const char *buffer){
+void setTextOtherPage(const char *object, const char *page, const char *buffer)
+{
   String cmd;
   cmd = String(page) + "." + String(object) + ".txt=\"" + String(buffer) + "\"";
-    nexSerial.print(cmd);
-    nexSerial.write(0xFF);
-    nexSerial.write(0xFF);
-    nexSerial.write(0xFF);
+  nexSerial.print(cmd);
+  nexSerial.write(0xFF);
+  nexSerial.write(0xFF);
+  nexSerial.write(0xFF);
+}
+void setNexNumberOtherPage(const char *object, const char *page, int32_t number)
+{
+  String cmd;
+  cmd = String(page) + "." + String(object) + ".val=" + String(number);
+  nexSerial.print(cmd);
+  nexSerial.write(0xFF);
+  nexSerial.write(0xFF);
+  nexSerial.write(0xFF);
 }
