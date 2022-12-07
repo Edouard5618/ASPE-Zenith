@@ -79,12 +79,14 @@ void loop()
     fermerLED();          // Fermer les LED si les poignées ne sont pas activées sur l'écran.
     majHorloge();         // Mise à jour de l'horloge
     jerkTimer = millis(); // Reset du timer
-
+                          // Serial print de PWMG, PWMG_REEL et OUTPUTM
+    Serial.print("PWMG: ");
+    Serial.print(PWMG);
+    Serial.print(" PWMG_REEL: ");
+    Serial.print(PWMG_reel);
+    Serial.print(" outputM: ");
+    Serial.println(outputM);
   }
-
-
-
-
 
   EncodeurRoueDroite.read(); // Améliorer la fiabilité de la mesure
   EncodeurRoueGauche.read(); // Améliorer la fiabilité de la mesure
@@ -132,9 +134,9 @@ void asserMoteurs()
 
   //*** PID pour côté droit ***//
   eM = -vitesseDesireeDroite * ((float)CorrDeviation / 100) + vitesseReelleDroite;
-  if(abs(eM) > abs(vitesseDesireeDroite))
+  if (abs(eM) > abs(vitesseDesireeDroite))
   {
-    if(eM > 0)
+    if (eM > 0)
       eM = abs(vitesseDesireeDroite);
     else
       eM = -abs(vitesseDesireeDroite);
@@ -156,9 +158,9 @@ void asserMoteurs()
 
   //*** PID pour côté gauche ***//
   eM = -vitesseDesireeGauche + vitesseReelleGauche;
-  if(abs(eM) > abs(vitesseDesireeGauche))
+  if (abs(eM) > abs(vitesseDesireeGauche))
   {
-    if(eM > 0)
+    if (eM > 0)
       eM = abs(vitesseDesireeGauche);
     else
       eM = -abs(vitesseDesireeGauche);
@@ -673,6 +675,7 @@ void traitementDonnesManette(String data)
   if (signal_Joystick == 0)
   {
     DescenteRapideVerin();
+    MonteeRapideVerin();
 
     if (signal_verin == 1)
     { // AUCUNE COMMANDE DE VERIN
@@ -694,6 +697,7 @@ void traitementDonnesManette(String data)
       PWMG = 0;
       PWMVG = liftCoef;
       PWMVD = liftCoef;
+      MonteeRapide = false;
       // Serial.println("DOWN");
     }
 
@@ -704,6 +708,13 @@ void traitementDonnesManette(String data)
       PWMVG = liftCoef;
       PWMVD = liftCoef;
     }
+    else if (MonteeRapide)
+    {
+      PWMD = 0;
+      PWMG = 0;
+      PWMVG = -liftCoef;
+      PWMVD = -liftCoef;
+    }
   }
   if (signal_verin == 0)
   { // FIN DE LA COMMUNICATION
@@ -713,6 +724,7 @@ void traitementDonnesManette(String data)
     PWMVG = 0;
     PWMVD = 0;
     DescenteRapide = false;
+    MonteeRapide = false;
   }
 
 } // Fin traitementDonnesManette
@@ -810,6 +822,17 @@ void DescenteRapideVerin()
 
   if (signal_verin == 3 && (millis() - DescenteTimer2) < 500)
     DescenteRapide = true;
+}
+void MonteeRapideVerin()
+{
+  if (signal_verin == 2)
+    MonteeTimer1 = millis();
+
+  if (signal_verin == 1 && (millis() - MonteeTimer1) < 500)
+    MonteeTimer2 = millis();
+
+  if (signal_verin == 2 && (millis() - MonteeTimer2) < 500)
+    MonteeRapide = true;
 }
 
 /*--- POIGNÉES ---*/

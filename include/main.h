@@ -163,7 +163,7 @@ double output;          // Écart appliqué entre les PWMs des vérins gauche et
 #define rateErrorMaxM 10           // Valeur maxi de dérivée du PID
 #define kpM 1.9                    // Coefficient proportionnel
 #define kdM 1.0                    // Coefficient dérivée
-#define outputMaxM 6               // Valeur maxi de output (anti windup)
+#define outputMaxM 3               // Valeur maxi de output (anti windup)
 double eM = 0;                     // Erreur asservissement vérin (écart entre les compteurs effet Hall gauche vs droit)
 double lastErrorM_R, lastErrorM_L; // Buffer pour calcul de la dérivée
 double rateErrorM_R;               // Intégrale et dérivée du PID
@@ -216,9 +216,12 @@ int signal_y;
 int signal_Joystick;
 bool manette_en_cours = 0; // La manette est en train de communiquer avec le contrôleur
 bool DescenteRapide = false;
+bool MonteeRapide = false;
 unsigned long DerniereComm = 0;
 unsigned long DescenteTimer1 = 0;
 unsigned long DescenteTimer2 = 0;
+unsigned long MonteeTimer1 = 0;
+unsigned long MonteeTimer2 = 0;
 unsigned long TempsChangementVitesse = 0;
 
 /*--- Signal BLE manette ---*/
@@ -406,6 +409,7 @@ void verinManuel();              // Commande des verins de levage avec l'interru
 void LoadCellCalib();            // Calibration de la load cell
 void ChangementVitesseManette(); // Changement de vitesse de déplacement
 void DescenteRapideVerin();      // Descente rapide des vérins
+void MonteeRapideVerin();        // Montée rapide des vérins
 
 /*--- MAINTIEN ---*/
 void springCalc();       // Calcul des combinaisons de ressorts pour trouver la combinaison optimale pour le poids à compenser
